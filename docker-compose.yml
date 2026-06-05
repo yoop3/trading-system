@@ -1,0 +1,25 @@
+version: "3.9"
+
+services:
+  trading-bot:
+    build: .
+    container_name: ai-trading-bot
+    restart: unless-stopped          # auto-restart ถ้า crash
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./logs:/app/logs             # logs persistent
+      - ./trading.db:/app/trading.db # database persistent
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "7"

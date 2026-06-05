@@ -1,0 +1,18 @@
+[Unit]
+Description=AI Trading Bot (ETH/USDT)
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/trading-system
+ExecStart=/usr/bin/python3 main.py
+Restart=always
+RestartSec=10
+StandardOutput=append:/opt/trading-system/logs/service.log
+StandardError=append:/opt/trading-system/logs/service.log
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

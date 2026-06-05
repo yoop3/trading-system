@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install *)",
+      "Bash(python -c \"from core.data_fetcher import DataFetcher; print\\('data_fetcher OK'\\)\")",
+      "Bash(python -c \"from core.indicators import Indicators; print\\('indicators OK'\\)\")",
+      "Bash(python -c \"from core.database import Database; print\\('database OK'\\)\")",
+      "Bash(python3 -c \"from core.data_fetcher import DataFetcher; print\\('data_fetcher OK'\\)\")",
+      "Bash(python3 -c \"from core.indicators import Indicators; print\\('indicators OK'\\)\")",
+      "Bash(python3 -c \"from core.database import Database; print\\('database OK'\\)\")",
+      "Bash(python3 *)",
+      "Bash(pip3 install *)",
+      "Bash(curl *)",
+      "Bash(pip3 freeze *)"
+    ]
+  }
+}

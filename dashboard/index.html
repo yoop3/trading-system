@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Trading Dashboard — ETHUSDT</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0d1117; --card: #161b22; --border: #30363d;
+      --text: #e6edf3; --muted: #7d8590; --green: #3fb950;
+      --red: #f85149; --yellow: #d29922; --blue: #58a6ff;
+      --purple: #bc8cff;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; }
+    .header { background: var(--card); border-bottom: 1px solid var(--border); padding: 12px 24px;
+              display: flex; align-items: center; justify-content: space-between; }
+    .header h1 { font-size: 1.1rem; font-weight: 600; }
+    .header .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green);
+                           display: inline-block; margin-right: 6px; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    .container { max-width: 1400px; margin: 0 auto; padding: 16px; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; margin-bottom: 16px; }
+    .grid-agents { display: grid; grid-template-columns: repeat(auto-fill,minmax(300px,1fr)); gap: 12px; margin-bottom: 16px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+    .card-title { font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 8px; }
+    .metric-value { font-size: 2rem; font-weight: 700; line-height: 1; }
+    .metric-sub { font-size: .8rem; color: var(--muted); margin-top: 4px; }
+    .positive { color: var(--green); }
+    .negative { color: var(--red); }
+    .neutral { color: var(--muted); }
+    /* Signal badge */
+    .badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px;
+             border-radius: 20px; font-size: .75rem; font-weight: 600; }
+    .badge-long { background: rgba(63,185,80,.15); color: var(--green); border: 1px solid var(--green); }
+    .badge-short { background: rgba(248,81,73,.15); color: var(--red); border: 1px solid var(--red); }
+    .badge-hold { background: rgba(125,133,144,.15); color: var(--muted); border: 1px solid var(--border); }
+    /* Progress bar */
+    .progress { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; margin: 4px 0; }
+    .progress-fill { height: 100%; border-radius: 3px; transition: width .3s; }
+    .progress-green { background: var(--green); }
+    .progress-red { background: var(--red); }
+    .progress-yellow { background: var(--yellow); }
+    /* Agent card */
+    .agent-card { position: relative; }
+    .agent-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .agent-name { font-weight: 600; font-size: .9rem; }
+    .agent-status { font-size: .7rem; padding: 2px 6px; border-radius: 4px; background: var(--border); }
+    .status-analyzing { background: rgba(88,166,255,.2); color: var(--blue); }
+    .status-done { background: rgba(63,185,80,.2); color: var(--green); }
+    .status-error { background: rgba(248,81,73,.2); color: var(--red); }
+    .status-idle { background: var(--border); color: var(--muted); }
+    .agent-score-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+    .agent-score-label { font-size: .7rem; color: var(--muted); width: 60px; }
+    .agent-score-bar { flex: 1; }
+    .agent-reason { font-size: .72rem; color: var(--muted); margin-top: 8px; line-height: 1.4; }
+    .agent-next { font-size: .7rem; color: var(--blue); margin-top: 4px; }
+    .agent-time { font-size: .65rem; color: var(--muted); margin-top: 4px; }
+    /* Master decision */
+    .master-signal { font-size: 3rem; font-weight: 800; text-align: center; padding: 16px 0; }
+    .master-score { text-align: center; font-size: 1.2rem; margin-bottom: 8px; }
+    .master-reasoning { font-size: .8rem; color: var(--muted); text-align: center; line-height: 1.6;
+                        background: var(--bg); border-radius: 6px; padding: 8px; margin-top: 8px; }
+    /* Table */
+    .table { width: 100%; border-collapse: collapse; font-size: .78rem; }
+    .table th { text-align: left; padding: 6px 8px; color: var(--muted); font-weight: 500;
+                border-bottom: 1px solid var(--border); }
+    .table td { padding: 6px 8px; border-bottom: 1px solid rgba(48,54,61,.5); }
+    .table tr:last-child td { border-bottom: none; }
+    /* Chart */
+    .chart-wrap { position: relative; height: 200px; }
+    /* Balance row */
+    .balance-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; }
+    .bal-item { text-align: center; }
+    .bal-value { font-size: 1.2rem; font-weight: 700; }
+    .bal-label { font-size: .7rem; color: var(--muted); }
+    /* Countdown */
+    #countdown { font-size: .8rem; color: var(--muted); text-align: right; }
+    /* Responsive */
+    @media(max-width:768px) { .grid-2,.grid-3 { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+
+<header class="header">
+  <div>
+    <span class="status-dot" id="conn-dot"></span>
+    <h1 style="display:inline">AI Trading System — ETH/USDT Futures (Testnet)</h1>
+  </div>
+  <div id="countdown">กำลังโหลด...</div>
+</header>
+
+<div class="container">
+
+  <!-- Section 1: Overview -->
+  <div class="grid-3">
+    <div class="card">
+      <div class="card-title">Balance (USDT)</div>
+      <div class="metric-value" id="balance-total">—</div>
+      <div class="metric-sub">
+        Free: <span id="balance-free">—</span> | Used: <span id="balance-used">—</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Today PnL</div>
+      <div class="metric-value" id="today-pnl">—</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Open Position</div>
+      <div id="position-info" style="font-size:.85rem">ไม่มี position เปิดอยู่</div>
+    </div>
+  </div>
+
+  <!-- 30-Day PnL Chart -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-title">30-Day PnL Chart</div>
+    <div class="chart-wrap">
+      <canvas id="pnl-chart"></canvas>
+    </div>
+  </div>
+
+  <!-- Section 2: Agent Cards -->
+  <div class="card-title" style="margin-bottom:8px;padding-left:4px">Agent Signals</div>
+  <div class="grid-agents" id="agents-grid">
+    <!-- Agent cards injected by JS -->
+  </div>
+
+  <!-- Section 3: Master Decision -->
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title">Master Decision</div>
+      <div class="master-score">Weighted Score: <strong id="master-score">—</strong></div>
+      <div class="master-signal" id="master-signal">—</div>
+      <div class="master-reasoning" id="master-reasoning">กำลังรอข้อมูล...</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Trade History (20 รายการล่าสุด)</div>
+      <div style="overflow-x:auto">
+        <table class="table">
+          <thead><tr>
+            <th>เวลา</th><th>Side</th><th>Entry</th><th>Exit</th><th>PnL</th><th>Status</th>
+          </tr></thead>
+          <tbody id="trades-tbody">
+            <tr><td colspan="6" style="text-align:center;color:var(--muted)">ยังไม่มี trade</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const AGENT_ICONS = {
+  technical: '📊', macro: '🌐', sentiment: '😨',
+  news: '📰', whale: '🐋', risk: '🛡️', master: '🤖'
+};
+const AGENT_NAMES = {
+  technical: 'Technical', macro: 'Macro', sentiment: 'Sentiment',
+  news: 'News', whale: 'Whale', risk: 'Risk', master: 'Master'
+};
+const AGENT_ORDER = ['technical', 'macro', 'sentiment', 'news', 'whale', 'risk', 'master'];
+
+let pnlChart = null;
+let ws = null;
+let reconnectTimer = null;
+let nextUpdateSec = 5;
+
+// ---------- Chart ----------
+function initChart() {
+  const ctx = document.getElementById('pnl-chart').getContext('2d');
+  pnlChart = new Chart(ctx, {
+    type: 'line',
+    data: { labels: [], datasets: [{ label: 'Balance (USDT)', data: [],
+      borderColor: '#3fb950', backgroundColor: 'rgba(63,185,80,.1)',
+      tension: 0.3, fill: true, pointRadius: 2 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { color: '#21262d' }, ticks: { color: '#7d8590', maxTicksLimit: 10 } },
+        y: { grid: { color: '#21262d' }, ticks: { color: '#7d8590' } }
+      }
+    }
+  });
+}
+
+// ---------- Agent Card ----------
+function renderAgentCard(name, data) {
+  const signal = data?.signal || 'HOLD';
+  const score = data?.score ?? 0;
+  const conf = data?.confidence ?? 0;
+  const status = data?.status || 'IDLE';
+  const reason = data?.reason || '—';
+  const nextAction = data?.next_action || '—';
+  const ts = data?.timestamp ? timeAgo(data.timestamp) : '—';
+
+  const badgeClass = signal === 'LONG' || signal === 'APPROVED' ? 'badge-long'
+                   : signal === 'SHORT' || signal === 'VETO' ? 'badge-short'
+                   : 'badge-hold';
+  const statusClass = 'status-' + status.toLowerCase();
+  const scoreNorm = Math.abs(score) / 10;
+  const scoreColor = score > 0 ? 'progress-green' : score < 0 ? 'progress-red' : 'progress-yellow';
+  const icon = AGENT_ICONS[name] || '🤖';
+  const displayName = AGENT_NAMES[name] || name;
+
+  return `
+    <div class="card agent-card">
+      <div class="agent-header">
+        <span class="agent-name">${icon} ${displayName} Agent</span>
+        <span class="agent-status ${statusClass}">${status}</span>
+      </div>
+      <div style="margin-bottom:8px">
+        <span class="badge ${badgeClass}">${signal}</span>
+      </div>
+      <div class="agent-score-row">
+        <span class="agent-score-label">Score ${score >= 0 ? '+' : ''}${score.toFixed(1)}</span>
+        <div class="agent-score-bar">
+          <div class="progress"><div class="progress-fill ${scoreColor}" style="width:${scoreNorm*100}%"></div></div>
+        </div>
+      </div>
+      <div class="agent-score-row">
+        <span class="agent-score-label">Conf ${(conf*100).toFixed(0)}%</span>
+        <div class="agent-score-bar">
+          <div class="progress"><div class="progress-fill progress-yellow" style="width:${conf*100}%"></div></div>
+        </div>
+      </div>
+      <div class="agent-reason">${reason}</div>
+      <div class="agent-next">⏭ ${nextAction}</div>
+      <div class="agent-time">อัปเดต ${ts}</div>
+    </div>`;
+}
+
+// ---------- Master Signal ----------
+function renderMaster(decision) {
+  const el = document.getElementById('master-signal');
+  const scoreEl = document.getElementById('master-score');
+  const reasonEl = document.getElementById('master-reasoning');
+  if (!decision) return;
+
+  const score = decision.total_score ?? 0;
+  el.textContent = decision.signal || '—';
+  el.className = 'master-signal ' + (
+    decision.signal === 'LONG' ? 'positive' :
+    decision.signal === 'SHORT' ? 'negative' : 'neutral'
+  );
+  scoreEl.textContent = (score >= 0 ? '+' : '') + score.toFixed(2);
+  scoreEl.className = score > 0 ? 'positive' : score < 0 ? 'negative' : 'neutral';
+  reasonEl.textContent = decision.reasoning || '—';
+}
+
+// ---------- Balance ----------
+function renderBalance(balance, todayPnl) {
+  document.getElementById('balance-total').textContent = fmt(balance?.total);
+  document.getElementById('balance-free').textContent = fmt(balance?.free);
+  document.getElementById('balance-used').textContent = fmt(balance?.used);
+  const pnlEl = document.getElementById('today-pnl');
+  pnlEl.textContent = (todayPnl >= 0 ? '+' : '') + fmt(todayPnl);
+  pnlEl.className = 'metric-value ' + (todayPnl > 0 ? 'positive' : todayPnl < 0 ? 'negative' : '');
+}
+
+// ---------- Position ----------
+function renderPosition(pos) {
+  const el = document.getElementById('position-info');
+  if (!pos) { el.innerHTML = '<span style="color:var(--muted)">ไม่มี position เปิดอยู่</span>'; return; }
+  const side = pos.side || '—';
+  const entry = fmt(pos.entryPrice || pos.entry_price);
+  const size = pos.contracts || pos.amount || '—';
+  const upnl = pos.unrealizedPnl ?? 0;
+  const upnlClass = upnl >= 0 ? 'positive' : 'negative';
+  el.innerHTML = `
+    <div class="badge ${side === 'long' ? 'badge-long' : 'badge-short'}" style="margin-bottom:6px">
+      ${side.toUpperCase()}
+    </div><br>
+    Entry: ${entry} | Size: ${size} ETH<br>
+    Unrealized PnL: <span class="${upnlClass}">${upnl >= 0 ? '+' : ''}${fmt(upnl)}</span>`;
+}
+
+// ---------- Trades ----------
+function renderTrades(trades) {
+  const tbody = document.getElementById('trades-tbody');
+  if (!trades || trades.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted)">ยังไม่มี trade</td></tr>';
+    return;
+  }
+  tbody.innerHTML = trades.map(t => {
+    const pnl = t.pnl ?? 0;
+    const pnlClass = pnl > 0 ? 'positive' : pnl < 0 ? 'negative' : '';
+    const statusClass = t.status === 'OPEN' ? 'positive' : t.status === 'STOPPED' ? 'negative' : '';
+    return `<tr>
+      <td>${(t.timestamp || '').slice(11, 19)}</td>
+      <td><span class="badge ${t.side === 'LONG' ? 'badge-long' : 'badge-short'}">${t.side}</span></td>
+      <td>${fmt(t.entry_price)}</td>
+      <td>${t.exit_price ? fmt(t.exit_price) : '—'}</td>
+      <td class="${pnlClass}">${t.exit_price ? (pnl >= 0 ? '+' : '') + fmt(pnl) : '—'}</td>
+      <td class="${statusClass}">${t.status}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ---------- Chart Update ----------
+function updateChart(history) {
+  if (!pnlChart || !history || history.length === 0) return;
+  const labels = history.map(h => h.timestamp?.slice(5, 16) || '');
+  const data = history.map(h => h.balance);
+  pnlChart.data.labels = labels;
+  pnlChart.data.datasets[0].data = data;
+  pnlChart.update('none');
+}
+
+// ---------- Main Render ----------
+function render(state) {
+  // Agents
+  const grid = document.getElementById('agents-grid');
+  grid.innerHTML = AGENT_ORDER.map(name => renderAgentCard(name, state.agents?.[name])).join('');
+
+  // Master
+  renderMaster(state.master_decision);
+
+  // Balance
+  renderBalance(state.balance, state.today_pnl || 0);
+
+  // Position
+  renderPosition(state.position);
+
+  // Trades
+  renderTrades(state.trades);
+
+  // Chart
+  updateChart(state.balance_history);
+}
+
+// ---------- Helpers ----------
+function fmt(v) {
+  if (v === null || v === undefined || isNaN(v)) return '—';
+  return parseFloat(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function timeAgo(isoStr) {
+  if (!isoStr) return '—';
+  const diff = Math.floor((Date.now() - new Date(isoStr).getTime()) / 1000);
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  return `${Math.floor(diff / 3600)}h ago`;
+}
+
+// ---------- WebSocket ----------
+function connect() {
+  const dot = document.getElementById('conn-dot');
+  dot.style.background = 'var(--yellow)';
+
+  ws = new WebSocket(`ws://${location.host}/ws`);
+
+  ws.onopen = () => {
+    dot.style.background = 'var(--green)';
+    document.getElementById('countdown').textContent = 'Connected';
+    clearTimeout(reconnectTimer);
+    nextUpdateSec = 5;
+  };
+
+  ws.onmessage = (ev) => {
+    try {
+      const state = JSON.parse(ev.data);
+      render(state);
+      document.getElementById('countdown').textContent =
+        'อัปเดตล่าสุด ' + new Date().toLocaleTimeString('th-TH');
+    } catch (e) { console.error('parse error', e); }
+  };
+
+  ws.onclose = () => {
+    dot.style.background = 'var(--red)';
+    document.getElementById('countdown').textContent = `Reconnecting in ${nextUpdateSec}s...`;
+    reconnectTimer = setTimeout(connect, nextUpdateSec * 1000);
+    nextUpdateSec = Math.min(nextUpdateSec * 2, 30);
+  };
+
+  ws.onerror = () => { ws.close(); };
+}
+
+// ---------- Init ----------
+initChart();
+connect();
+
+// Refresh timeAgo every 30s
+setInterval(() => {
+  document.querySelectorAll('.agent-time').forEach(el => {
+    const agentName = el.closest('.agent-card')?.querySelector('.agent-name')?.textContent?.trim();
+    // rebuild will happen on next WS message; this just prevents stale display
+  });
+}, 30000);
+</script>
+</body>
+</html>
