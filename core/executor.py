@@ -83,11 +83,20 @@ class Executor:
         Internal method สำหรับ open position ทั้ง LONG และ SHORT
         """
         if not self.trading_enabled:
+            price = await self.data_fetcher.get_current_price()
             logger.warning(
                 f"Executor: TRADING_ENABLED=false — SIMULATED {side} "
                 f"size={size} ETH leverage={leverage}x TP={tp} SL={sl}"
             )
-            return {"simulated": True, "side": side, "size": size, "tp": tp, "sl": sl}
+            trade_id = await self.db.save_trade(
+                side=side,
+                entry_price=price,
+                size=size,
+                tp_price=tp,
+                sl_price=sl,
+            )
+            self._current_trade_id = trade_id
+            return {"simulated": True, "side": side, "size": size, "tp": tp, "sl": sl, "trade_id": trade_id}
 
         try:
             logger.info(

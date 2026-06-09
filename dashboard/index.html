@@ -113,6 +113,34 @@
     </div>
   </div>
 
+  <!-- Section 2: Paper Trade Stats -->
+  <div class="grid-3" style="margin-bottom:16px">
+    <div class="card">
+      <div class="card-title">Win Rate</div>
+      <div class="metric-value" id="stat-winrate">—</div>
+      <div class="metric-sub"><span id="stat-wins">—</span> wins / <span id="stat-losses">—</span> losses / <span id="stat-total">—</span> total</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Total PnL (Paper)</div>
+      <div class="metric-value" id="stat-total-pnl">—</div>
+      <div class="metric-sub">Avg per trade: <span id="stat-avg-pnl">—</span> USDT</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Best / Worst Trade</div>
+      <div style="display:flex;gap:16px;align-items:center;margin-top:8px">
+        <div>
+          <div class="metric-sub">Best</div>
+          <div style="font-size:1.3rem;font-weight:700" class="positive" id="stat-best">—</div>
+        </div>
+        <div style="color:var(--border)">|</div>
+        <div>
+          <div class="metric-sub">Worst</div>
+          <div style="font-size:1.3rem;font-weight:700" class="negative" id="stat-worst">—</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- 30-Day PnL Chart -->
   <div class="card" style="margin-bottom:16px">
     <div class="card-title">30-Day PnL Chart</div>
@@ -310,6 +338,23 @@ function updateChart(history) {
   pnlChart.update('none');
 }
 
+// ---------- Stats ----------
+function renderStats(s) {
+  if (!s || s.total === 0) return;
+  const wrEl = document.getElementById('stat-winrate');
+  wrEl.textContent = s.win_rate.toFixed(1) + '%';
+  wrEl.className = 'metric-value ' + (s.win_rate >= 50 ? 'positive' : 'negative');
+  document.getElementById('stat-wins').textContent = s.wins;
+  document.getElementById('stat-losses').textContent = s.losses;
+  document.getElementById('stat-total').textContent = s.total;
+  const tpEl = document.getElementById('stat-total-pnl');
+  tpEl.textContent = (s.total_pnl >= 0 ? '+' : '') + fmt(s.total_pnl);
+  tpEl.className = 'metric-value ' + (s.total_pnl > 0 ? 'positive' : s.total_pnl < 0 ? 'negative' : '');
+  document.getElementById('stat-avg-pnl').textContent = (s.avg_pnl >= 0 ? '+' : '') + fmt(s.avg_pnl);
+  document.getElementById('stat-best').textContent = '+' + fmt(s.best_trade);
+  document.getElementById('stat-worst').textContent = fmt(s.worst_trade);
+}
+
 // ---------- Main Render ----------
 function render(state) {
   // Agents
@@ -327,6 +372,9 @@ function render(state) {
 
   // Trades
   renderTrades(state.trades);
+
+  // Stats
+  renderStats(state.trade_stats);
 
   // Chart
   updateChart(state.balance_history);

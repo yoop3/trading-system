@@ -32,6 +32,8 @@ class DashboardServer:
             "trades": [],
             "balance_history": [],
             "today_pnl": 0.0,
+            "trade_stats": {"total": 0, "wins": 0, "losses": 0, "win_rate": 0,
+                            "avg_pnl": 0, "total_pnl": 0, "best_trade": 0, "worst_trade": 0},
             "last_update": "",
         }
         self._db = None
@@ -156,6 +158,7 @@ class DashboardServer:
                 self._state["trades"] = await self._db.get_recent_trades(20)
                 self._state["balance_history"] = await self._db.get_balance_history(30)
                 self._state["today_pnl"] = await self._db.get_today_pnl()
+                self._state["trade_stats"] = await self._db.get_trade_stats()
                 latest_decision = await self._db.get_latest_master_decision()
                 if latest_decision and not self._state["master_decision"]:
                     self._state["master_decision"] = latest_decision
