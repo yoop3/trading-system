@@ -3,6 +3,7 @@ risk_agent.py — Risk Manager ที่มีสิทธิ์ VETO ทุก 
 รันทุกครั้งก่อน execute | ตรวจ daily loss, positions, position size
 """
 
+import os
 from datetime import datetime, timezone
 from loguru import logger
 
@@ -57,6 +58,9 @@ class RiskAgent(BaseAgent):
             # ดึงข้อมูลที่ต้องการ
             balance = await self.data_fetcher.get_balance()
             total_balance = balance.get("total", 0)
+            trading_enabled = os.getenv("TRADING_ENABLED", "false").lower() == "true"
+            if total_balance == 0 and not trading_enabled:
+                total_balance = float(os.getenv("PAPER_BALANCE", "0"))
             daily_pnl = await self.db.get_today_pnl()
             positions = await self.data_fetcher.get_open_positions()
 
