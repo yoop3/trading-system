@@ -62,7 +62,10 @@ class RiskAgent(BaseAgent):
             if total_balance == 0 and not trading_enabled:
                 total_balance = float(os.getenv("PAPER_BALANCE", "0"))
             daily_pnl = await self.db.get_today_pnl()
-            positions = await self.data_fetcher.get_open_positions()
+            if trading_enabled:
+                open_count = len(await self.data_fetcher.get_open_positions())
+            else:
+                open_count = len(await self.db.get_open_trades())
 
             # Check 1 — Daily loss limit
             if total_balance > 0 and daily_pnl / total_balance < -self.MAX_DAILY_LOSS_PCT:
@@ -74,7 +77,7 @@ class RiskAgent(BaseAgent):
                 return self._veto(veto_reason)
 
             # Check 2 — Max open positions
-            if len(positions) >= self.MAX_OPEN_POSITIONS:
+            if open_count >= self.MAX_OPEN_POSITIONS:
                 veto_reason = f"Max positions reached: {len(positions)}/{self.MAX_OPEN_POSITIONS}"
                 logger.warning(f"[risk] VETO — {veto_reason}")
                 return self._veto(veto_reason)
