@@ -78,7 +78,7 @@ class RiskAgent(BaseAgent):
 
             # Check 2 — Max open positions
             if open_count >= self.MAX_OPEN_POSITIONS:
-                veto_reason = f"Max positions reached: {len(positions)}/{self.MAX_OPEN_POSITIONS}"
+                veto_reason = f"Max positions reached: {open_count}/{self.MAX_OPEN_POSITIONS}"
                 logger.warning(f"[risk] VETO — {veto_reason}")
                 return self._veto(veto_reason)
 

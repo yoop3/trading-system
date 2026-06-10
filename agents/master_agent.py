@@ -40,6 +40,7 @@ class MasterDecision:
     timestamp: str
     consensus_long: int = 0   # จำนวน agent ที่ LONG
     consensus_short: int = 0  # จำนวน agent ที่ SHORT
+    weight_ratio: float = 0.0  # weight ratio ของฝั่งที่ชนะ (ใช้ grading)
 
 
 class MasterAgent(BaseAgent):
@@ -130,10 +131,12 @@ class MasterAgent(BaseAgent):
 
         # Step 3-5 — ตัดสินใจ
         used_llm = False
+        weight_ratio = 0.0  # weight ratio ของฝั่งที่ชนะ (ใช้ grading)
 
         if total_score > LONG_THRESHOLD:
             if long_ok:
                 final_signal = "LONG"
+                weight_ratio = long_ratio
                 reasoning = (
                     f"Score {total_score:+.1f} + LONG weight {long_ratio:.0%} ≥ {MIN_WEIGHT_RATIO:.0%}"
                 )
@@ -147,6 +150,7 @@ class MasterAgent(BaseAgent):
         elif total_score < SHORT_THRESHOLD:
             if short_ok:
                 final_signal = "SHORT"
+                weight_ratio = short_ratio
                 reasoning = (
                     f"Score {total_score:+.1f} + SHORT weight {short_ratio:.0%} ≥ {MIN_WEIGHT_RATIO:.0%}"
                 )
@@ -165,9 +169,11 @@ class MasterAgent(BaseAgent):
 
             if llm_signal == "LONG" and long_ok:
                 final_signal = "LONG"
+                weight_ratio = long_ratio
                 reasoning = llm_result.get("reasoning", "") + f" [LLM+LONG {long_ratio:.0%}]"
             elif llm_signal == "SHORT" and short_ok:
                 final_signal = "SHORT"
+                weight_ratio = short_ratio
                 reasoning = llm_result.get("reasoning", "") + f" [LLM+SHORT {short_ratio:.0%}]"
             else:
                 final_signal = "HOLD"
@@ -180,6 +186,7 @@ class MasterAgent(BaseAgent):
             total_score=total_score,
             reasoning=reasoning,
             used_llm=used_llm,
+            weight_ratio=weight_ratio,
             timestamp=datetime.now(timezone.utc).isoformat(),
             consensus_long=long_count,
             consensus_short=short_count,

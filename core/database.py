@@ -70,7 +70,9 @@ class Database:
                 status TEXT DEFAULT 'OPEN',
                 exit_price REAL,
                 pnl REAL,
-                close_timestamp TEXT
+                close_timestamp TEXT,
+                reason TEXT,
+                grade TEXT
             );
 
             CREATE TABLE IF NOT EXISTS balance_history (
@@ -81,6 +83,21 @@ class Database:
             );
         """)
         await self._conn.commit()
+
+        # Migration: เพิ่ม column reason ถ้ายังไม่มี (สำหรับ DB เก่าที่สร้างก่อน column นี้)
+        try:
+            await self._conn.execute("ALTER TABLE trades ADD COLUMN reason TEXT")
+            await self._conn.commit()
+        except Exception:
+            pass  # column มีอยู่แล้ว
+
+        # Migration: เพิ่ม column grade ถ้ายังไม่มี (สำหรับ DB เก่าที่สร้างก่อน column นี้)
+        try:
+            await self._conn.execute("ALTER TABLE trades ADD COLUMN grade TEXT")
+            await self._conn.commit()
+        except Exception:
+            pass  # column มีอยู่แล้ว
+
         logger.debug("Database tables created/verified")
 
     async def save_signal(self, signal) -> None:
@@ -134,14 +151,16 @@ class Database:
         size: float,
         tp_price: Optional[float] = None,
         sl_price: Optional[float] = None,
+        reason: Optional[str] = None,
+        grade: Optional[str] = None,
     ) -> int:
         """บันทึก trade ใหม่ คืน trade id"""
         try:
             cursor = await self._conn.execute(
                 """INSERT INTO trades
-                   (timestamp, side, entry_price, tp_price, sl_price, size, status)
-                   VALUES (?, ?, ?, ?, ?, ?, 'OPEN')""",
-                (datetime.utcnow().isoformat(), side, entry_price, tp_price, sl_price, size),
+                   (timestamp, side, entry_price, tp_price, sl_price, size, status, reason, grade)
+                   VALUES (?, ?, ?, ?, ?, ?, 'OPEN', ?, ?)""",
+                (datetime.utcnow().isoformat(), side, entry_price, tp_price, sl_price, size, reason, grade),
             )
             await self._conn.commit()
             return cursor.lastrowid

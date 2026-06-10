@@ -24,6 +24,7 @@ from core.data_fetcher import DataFetcher
 from core.database import Database
 from core.executor import Executor
 from core.position_monitor import PositionMonitor
+from core.trade_grader import grade_trade
 from dashboard.server import DashboardServer
 
 
@@ -132,12 +133,22 @@ class TradingSystem:
             logger.error(f"[main] ATR fetch for TP/SL failed: {e}")
             return
 
+        # ให้เกรด A/B/C/D กับ trade นี้ (ดูเกณฑ์ใน docs/TRADE_GRADING.md)
+        atr_ratio = atr / price if price > 0 else 0.0
+        grade, grade_breakdown = grade_trade(
+            weight_ratio=decision.weight_ratio,
+            total_score=decision.total_score,
+            confidence=master_conf,
+            atr_ratio=atr_ratio,
+        )
+        logger.info(f"[main] Trade grade: {grade} ({grade_breakdown})")
+
         if decision.signal == "LONG":
             tp, sl = self.executor.calculate_tp_sl("LONG", price, atr)
-            result = await self.executor.open_long(size, leverage, tp, sl)
+            result = await self.executor.open_long(size, leverage, tp, sl, reason=decision.reasoning, grade=grade)
         else:
             tp, sl = self.executor.calculate_tp_sl("SHORT", price, atr)
-            result = await self.executor.open_short(size, leverage, tp, sl)
+            result = await self.executor.open_short(size, leverage, tp, sl, reason=decision.reasoning, grade=grade)
 
         if result:
             logger.success(

@@ -37,6 +37,11 @@
     .badge-long { background: rgba(63,185,80,.15); color: var(--green); border: 1px solid var(--green); }
     .badge-short { background: rgba(248,81,73,.15); color: var(--red); border: 1px solid var(--red); }
     .badge-hold { background: rgba(125,133,144,.15); color: var(--muted); border: 1px solid var(--border); }
+    /* Trade grade badge */
+    .badge-grade-a { background: rgba(63,185,80,.15); color: var(--green); border: 1px solid var(--green); }
+    .badge-grade-b { background: rgba(88,166,255,.15); color: var(--blue); border: 1px solid var(--blue); }
+    .badge-grade-c { background: rgba(210,153,34,.15); color: var(--yellow); border: 1px solid var(--yellow); }
+    .badge-grade-d { background: rgba(248,81,73,.15); color: var(--red); border: 1px solid var(--red); }
     /* Progress bar */
     .progress { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; margin: 4px 0; }
     .progress-fill { height: 100%; border-radius: 3px; transition: width .3s; }
@@ -168,10 +173,10 @@
       <div style="overflow-x:auto">
         <table class="table">
           <thead><tr>
-            <th>เวลา</th><th>Side</th><th>Entry</th><th>Exit</th><th>PnL</th><th>Status</th>
+            <th>เวลา</th><th>Side</th><th>Grade</th><th>Entry</th><th>Exit</th><th>PnL</th><th>Status</th><th>เหตุผล</th>
           </tr></thead>
           <tbody id="trades-tbody">
-            <tr><td colspan="6" style="text-align:center;color:var(--muted)">ยังไม่มี trade</td></tr>
+            <tr><td colspan="8" style="text-align:center;color:var(--muted)">ยังไม่มี trade</td></tr>
           </tbody>
         </table>
       </div>
@@ -310,20 +315,27 @@ function renderPosition(pos) {
 function renderTrades(trades) {
   const tbody = document.getElementById('trades-tbody');
   if (!trades || trades.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted)">ยังไม่มี trade</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted)">ยังไม่มี trade</td></tr>';
     return;
   }
   tbody.innerHTML = trades.map(t => {
     const pnl = t.pnl ?? 0;
     const pnlClass = pnl > 0 ? 'positive' : pnl < 0 ? 'negative' : '';
     const statusClass = t.status === 'OPEN' ? 'positive' : t.status === 'STOPPED' ? 'negative' : '';
+    const reason = t.reason || '—';
+    const reasonEsc = reason.replace(/"/g, '&quot;');
+    const grade = t.grade || '—';
+    const gradeClass = 'badge-grade-' + grade.toLowerCase();
+    const gradeBadge = t.grade ? `<span class="badge ${gradeClass}">${grade}</span>` : '—';
     return `<tr>
       <td>${(t.timestamp || '').slice(11, 19)}</td>
       <td><span class="badge ${t.side === 'LONG' ? 'badge-long' : 'badge-short'}">${t.side}</span></td>
+      <td>${gradeBadge}</td>
       <td>${fmt(t.entry_price)}</td>
       <td>${t.exit_price ? fmt(t.exit_price) : '—'}</td>
       <td class="${pnlClass}">${t.exit_price ? (pnl >= 0 ? '+' : '') + fmt(pnl) : '—'}</td>
       <td class="${statusClass}">${t.status}</td>
+      <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${reasonEsc}">${reason}</td>
     </tr>`;
   }).join('');
 }

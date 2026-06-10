@@ -11,6 +11,18 @@
 ## ทำล่าสุดถึง
 **DEPLOYMENT READY** — ระบบพร้อม paper trade 2 สัปดาห์ และ deploy บน DigitalOcean
 
+### Trade Grading (เพิ่มใหม่)
+- `docs/TRADE_GRADING.md` — เกณฑ์ให้เกรด A/B/C/D (consensus weight + signal strength + confidence + volatility modifier)
+- `core/trade_grader.py` — `grade_trade()` คำนวณเกรดอัตโนมัติตอนเปิด trade ไม่เรียก LLM เพิ่ม
+- `trades.grade` column ใหม่ใน DB (มี migration สำหรับ DB เก่า) + แสดงใน dashboard (คอลัมน์ Grade)
+- `agents/master_agent.py`: `MasterDecision` เพิ่ม field `weight_ratio` (ใช้คำนวณเกรด)
+
+### ค้างไว้ทำต่อ (Phase ถัดไป)
+- เก็บข้อมูล closed trades ให้ได้ ~15-20 ไม้ก่อน แล้วดู win rate แยกตามเกรด (A/B/C/D)
+- ถ้าเกรด A/B win rate ดีกว่าชัดเจน → feed สรุป win-rate-by-grade กลับเข้า prompt ของ master_agent (LLM) เป็น "memory"
+- พิจารณา filter ให้เทรดเฉพาะเกรด A (หรือ A/B) เมื่อข้อมูลพอ
+- (cosmetic, ยังไม่ทำ) `core/position_monitor.py` log PnL หน่วย "ETH" ควรเป็น "USDT"
+
 ## ไฟล์ที่สร้างแล้ว
 
 ### Phase 1 — Foundation
