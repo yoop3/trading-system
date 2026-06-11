@@ -14,6 +14,8 @@ class PositionMonitor:
     ใช้ได้ทั้ง paper trade และ real trade
     """
 
+    TAKER_FEE_PCT = 0.0005  # Binance Futures taker fee ~0.05% ต่อฝั่ง (entry + TP/SL = market/taker ทั้งคู่)
+
     def __init__(self, data_fetcher, db):
         self.data_fetcher = data_fetcher
         self.db = db
@@ -49,7 +51,7 @@ class PositionMonitor:
                     logger.info(
                         f"{icon} Trade #{trade['id']} {status} | "
                         f"{trade['side']} entry={trade['entry_price']:.2f} "
-                        f"exit={exit_price:.2f} PnL={pnl:+.4f} ETH"
+                        f"exit={exit_price:.2f} PnL={pnl:+.4f} USDT (หักค่าธรรมเนียมแล้ว)"
                     )
 
         except Exception as e:
@@ -62,9 +64,10 @@ class PositionMonitor:
         ตรวจว่า trade โดน TP หรือ SL ไหม
         คืน (exit_price, pnl, status) หรือ None ถ้ายังไม่โดน
 
-        PnL คำนวณเป็น USDT:
-          LONG:  (exit - entry) * size
-          SHORT: (entry - exit) * size
+        PnL คำนวณเป็น USDT หักค่าธรรมเนียมแล้ว:
+          gross: LONG (exit - entry) * size | SHORT (entry - exit) * size
+          fee:   (entry + exit) * size * TAKER_FEE_PCT  (entry + exit นับเป็น taker ทั้งคู่)
+          net = gross - fee
         """
         side       = trade.get("side", "")
         entry      = float(trade.get("entry_price", 0) or 0)
@@ -77,18 +80,23 @@ class PositionMonitor:
 
         if side == "LONG":
             if tp and price >= tp:
-                pnl = (tp - entry) * size
-                return tp, round(pnl, 4), "CLOSED"
+                pnl = self._net_pnl((tp - entry) * size, entry, tp, size)
+                return tp, pnl, "CLOSED"
             if sl and price <= sl:
-                pnl = (sl - entry) * size
-                return sl, round(pnl, 4), "STOPPED"
+                pnl = self._net_pnl((sl - entry) * size, entry, sl, size)
+                return sl, pnl, "STOPPED"
 
         elif side == "SHORT":
             if tp and price <= tp:
-                pnl = (entry - tp) * size
-                return tp, round(pnl, 4), "CLOSED"
+                pnl = self._net_pnl((entry - tp) * size, entry, tp, size)
+                return tp, pnl, "CLOSED"
             if sl and price >= sl:
-                pnl = (entry - sl) * size
-                return sl, round(pnl, 4), "STOPPED"
+                pnl = self._net_pnl((entry - sl) * size, entry, sl, size)
+                return sl, pnl, "STOPPED"
 
         return None
+
+    def _net_pnl(self, gross_pnl: float, entry: float, exit_price: float, size: float) -> float:
+        """หัก taker fee ของทั้ง entry และ exit ออกจาก gross PnL"""
+        fee = (entry + exit_price) * size * self.TAKER_FEE_PCT
+        return round(gross_pnl - fee, 4)

@@ -17,11 +17,15 @@
 - `trades.grade` column ใหม่ใน DB (มี migration สำหรับ DB เก่า) + แสดงใน dashboard (คอลัมน์ Grade)
 - `agents/master_agent.py`: `MasterDecision` เพิ่ม field `weight_ratio` (ใช้คำนวณเกรด)
 
+### Trading Fee Simulation (เพิ่มใหม่)
+- `core/position_monitor.py` — หัก taker fee จำลอง 0.05% ต่อฝั่ง (entry+exit) ออกจาก PnL ทุกครั้งที่ปิด trade
+  ทำให้สถิติ paper trading ใกล้เคียงของจริงมากขึ้น (trade ที่ PnL ใกล้ 0 อาจกลายเป็นขาดทุนสุทธิ)
+- แก้ label log PnL จาก "ETH" → "USDT" (หน่วยที่ถูกต้อง) ไปในตัว
+
 ### ค้างไว้ทำต่อ (Phase ถัดไป)
 - เก็บข้อมูล closed trades ให้ได้ ~15-20 ไม้ก่อน แล้วดู win rate แยกตามเกรด (A/B/C/D)
 - ถ้าเกรด A/B win rate ดีกว่าชัดเจน → feed สรุป win-rate-by-grade กลับเข้า prompt ของ master_agent (LLM) เป็น "memory"
 - พิจารณา filter ให้เทรดเฉพาะเกรด A (หรือ A/B) เมื่อข้อมูลพอ
-- (cosmetic, ยังไม่ทำ) `core/position_monitor.py` log PnL หน่วย "ETH" ควรเป็น "USDT"
 
 ## ไฟล์ที่สร้างแล้ว
 
