@@ -145,10 +145,14 @@ class TradingSystem:
 
         if decision.signal == "LONG":
             tp, sl = self.executor.calculate_tp_sl("LONG", price, atr)
-            result = await self.executor.open_long(size, leverage, tp, sl, reason=decision.reasoning, grade=grade)
+            result = await self.executor.open_long(
+                size, leverage, tp, sl, reason=decision.reasoning, grade=grade, grade_detail=grade_breakdown
+            )
         else:
             tp, sl = self.executor.calculate_tp_sl("SHORT", price, atr)
-            result = await self.executor.open_short(size, leverage, tp, sl, reason=decision.reasoning, grade=grade)
+            result = await self.executor.open_short(
+                size, leverage, tp, sl, reason=decision.reasoning, grade=grade, grade_detail=grade_breakdown
+            )
 
         if result:
             logger.success(

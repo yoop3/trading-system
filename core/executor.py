@@ -53,6 +53,7 @@ class Executor:
         sl: float,
         reason: str = "",
         grade: str = "",
+        grade_detail: str = "",
     ) -> Optional[dict]:
         """
         เปิด LONG position:
@@ -61,7 +62,7 @@ class Executor:
         3. ตั้ง TP/SL orders
         4. บันทึกลง database
         """
-        return await self._open_position("LONG", size, leverage, tp, sl, reason, grade)
+        return await self._open_position("LONG", size, leverage, tp, sl, reason, grade, grade_detail)
 
     async def open_short(
         self,
@@ -71,9 +72,10 @@ class Executor:
         sl: float,
         reason: str = "",
         grade: str = "",
+        grade_detail: str = "",
     ) -> Optional[dict]:
         """เปิด SHORT position"""
-        return await self._open_position("SHORT", size, leverage, tp, sl, reason, grade)
+        return await self._open_position("SHORT", size, leverage, tp, sl, reason, grade, grade_detail)
 
     async def _open_position(
         self,
@@ -84,6 +86,7 @@ class Executor:
         sl: float,
         reason: str = "",
         grade: str = "",
+        grade_detail: str = "",
     ) -> Optional[dict]:
         """
         Internal method สำหรับ open position ทั้ง LONG และ SHORT
@@ -102,6 +105,7 @@ class Executor:
                 sl_price=sl,
                 reason=reason,
                 grade=grade,
+                grade_detail=grade_detail,
             )
             self._current_trade_id = trade_id
             return {"simulated": True, "side": side, "size": size, "tp": tp, "sl": sl, "trade_id": trade_id}
@@ -156,6 +160,7 @@ class Executor:
                 sl_price=sl,
                 reason=reason,
                 grade=grade,
+                grade_detail=grade_detail,
             )
             self._current_trade_id = trade_id
 

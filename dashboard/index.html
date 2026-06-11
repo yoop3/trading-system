@@ -326,7 +326,10 @@ function renderTrades(trades) {
     const reasonEsc = reason.replace(/"/g, '&quot;');
     const grade = t.grade || '—';
     const gradeClass = 'badge-grade-' + grade.toLowerCase();
-    const gradeBadge = t.grade ? `<span class="badge ${gradeClass}">${grade}</span>` : '—';
+    const gradeDetailEsc = (t.grade_detail || '').replace(/"/g, '&quot;');
+    const gradeBadge = t.grade
+      ? `<span class="badge ${gradeClass}" title="${gradeDetailEsc}">${grade}</span>`
+      : '—';
     return `<tr>
       <td>${(t.timestamp || '').slice(11, 19)}</td>
       <td><span class="badge ${t.side === 'LONG' ? 'badge-long' : 'badge-short'}">${t.side}</span></td>

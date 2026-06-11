@@ -72,7 +72,8 @@ class Database:
                 pnl REAL,
                 close_timestamp TEXT,
                 reason TEXT,
-                grade TEXT
+                grade TEXT,
+                grade_detail TEXT
             );
 
             CREATE TABLE IF NOT EXISTS balance_history (
@@ -94,6 +95,13 @@ class Database:
         # Migration: เพิ่ม column grade ถ้ายังไม่มี (สำหรับ DB เก่าที่สร้างก่อน column นี้)
         try:
             await self._conn.execute("ALTER TABLE trades ADD COLUMN grade TEXT")
+            await self._conn.commit()
+        except Exception:
+            pass  # column มีอยู่แล้ว
+
+        # Migration: เพิ่ม column grade_detail ถ้ายังไม่มี (สำหรับ DB เก่าที่สร้างก่อน column นี้)
+        try:
+            await self._conn.execute("ALTER TABLE trades ADD COLUMN grade_detail TEXT")
             await self._conn.commit()
         except Exception:
             pass  # column มีอยู่แล้ว
@@ -153,14 +161,15 @@ class Database:
         sl_price: Optional[float] = None,
         reason: Optional[str] = None,
         grade: Optional[str] = None,
+        grade_detail: Optional[str] = None,
     ) -> int:
         """บันทึก trade ใหม่ คืน trade id"""
         try:
             cursor = await self._conn.execute(
                 """INSERT INTO trades
-                   (timestamp, side, entry_price, tp_price, sl_price, size, status, reason, grade)
-                   VALUES (?, ?, ?, ?, ?, ?, 'OPEN', ?, ?)""",
-                (datetime.utcnow().isoformat(), side, entry_price, tp_price, sl_price, size, reason, grade),
+                   (timestamp, side, entry_price, tp_price, sl_price, size, status, reason, grade, grade_detail)
+                   VALUES (?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?)""",
+                (datetime.utcnow().isoformat(), side, entry_price, tp_price, sl_price, size, reason, grade, grade_detail),
             )
             await self._conn.commit()
             return cursor.lastrowid
