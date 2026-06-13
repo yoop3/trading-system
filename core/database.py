@@ -73,7 +73,8 @@ class Database:
                 close_timestamp TEXT,
                 reason TEXT,
                 grade TEXT,
-                grade_detail TEXT
+                grade_detail TEXT,
+                asset TEXT DEFAULT 'ETH/USDT:USDT'
             );
 
             CREATE TABLE IF NOT EXISTS balance_history (
@@ -102,6 +103,13 @@ class Database:
         # Migration: เพิ่ม column grade_detail ถ้ายังไม่มี (สำหรับ DB เก่าที่สร้างก่อน column นี้)
         try:
             await self._conn.execute("ALTER TABLE trades ADD COLUMN grade_detail TEXT")
+            await self._conn.commit()
+        except Exception:
+            pass  # column มีอยู่แล้ว
+
+        # Migration: เพิ่ม column asset ถ้ายังไม่มี (สำหรับ DB เก่าก่อนรองรับ multi-asset เช่น SMC/XAUUSDT)
+        try:
+            await self._conn.execute("ALTER TABLE trades ADD COLUMN asset TEXT DEFAULT 'ETH/USDT:USDT'")
             await self._conn.commit()
         except Exception:
             pass  # column มีอยู่แล้ว
@@ -162,14 +170,16 @@ class Database:
         reason: Optional[str] = None,
         grade: Optional[str] = None,
         grade_detail: Optional[str] = None,
+        asset: Optional[str] = None,
     ) -> int:
-        """บันทึก trade ใหม่ คืน trade id"""
+        """บันทึก trade ใหม่ คืน trade id (asset = ccxt symbol เช่น 'ETH/USDT:USDT', 'XAU/USDT:USDT')"""
         try:
+            asset = asset or os.getenv("TRADING_SYMBOL", "ETH/USDT:USDT")
             cursor = await self._conn.execute(
                 """INSERT INTO trades
-                   (timestamp, side, entry_price, tp_price, sl_price, size, status, reason, grade, grade_detail)
-                   VALUES (?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?)""",
-                (datetime.utcnow().isoformat(), side, entry_price, tp_price, sl_price, size, reason, grade, grade_detail),
+                   (timestamp, side, entry_price, tp_price, sl_price, size, status, reason, grade, grade_detail, asset)
+                   VALUES (?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?)""",
+                (datetime.utcnow().isoformat(), side, entry_price, tp_price, sl_price, size, reason, grade, grade_detail, asset),
             )
             await self._conn.commit()
             return cursor.lastrowid
@@ -208,12 +218,17 @@ class Database:
         except Exception as e:
             logger.error(f"save_balance error: {e}")
 
-    async def get_open_trades(self) -> list:
-        """ดึง trade ที่ยัง OPEN อยู่ สำหรับ PositionMonitor ตรวจ TP/SL"""
+    async def get_open_trades(self, asset: Optional[str] = None) -> list:
+        """ดึง trade ที่ยัง OPEN อยู่ สำหรับ PositionMonitor ตรวจ TP/SL (ระบุ asset เพื่อ filter เฉพาะ symbol นั้น)"""
         try:
-            cursor = await self._conn.execute(
-                "SELECT * FROM trades WHERE status = 'OPEN'"
-            )
+            if asset:
+                cursor = await self._conn.execute(
+                    "SELECT * FROM trades WHERE status = 'OPEN' AND asset = ?", (asset,)
+                )
+            else:
+                cursor = await self._conn.execute(
+                    "SELECT * FROM trades WHERE status = 'OPEN'"
+                )
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
         except Exception as e:

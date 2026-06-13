@@ -54,6 +54,7 @@ class Executor:
         reason: str = "",
         grade: str = "",
         grade_detail: str = "",
+        asset: Optional[str] = None,
     ) -> Optional[dict]:
         """
         เปิด LONG position:
@@ -61,8 +62,10 @@ class Executor:
         2. ส่ง market order BUY
         3. ตั้ง TP/SL orders
         4. บันทึกลง database
+
+        asset: ccxt symbol (เช่น "XAU/USDT:USDT") — ถ้าไม่ระบุ ใช้ self.symbol (TRADING_SYMBOL)
         """
-        return await self._open_position("LONG", size, leverage, tp, sl, reason, grade, grade_detail)
+        return await self._open_position("LONG", size, leverage, tp, sl, reason, grade, grade_detail, asset)
 
     async def open_short(
         self,
@@ -73,9 +76,10 @@ class Executor:
         reason: str = "",
         grade: str = "",
         grade_detail: str = "",
+        asset: Optional[str] = None,
     ) -> Optional[dict]:
-        """เปิด SHORT position"""
-        return await self._open_position("SHORT", size, leverage, tp, sl, reason, grade, grade_detail)
+        """เปิด SHORT position (asset = ccxt symbol, ดู open_long)"""
+        return await self._open_position("SHORT", size, leverage, tp, sl, reason, grade, grade_detail, asset)
 
     async def _open_position(
         self,
@@ -87,15 +91,18 @@ class Executor:
         reason: str = "",
         grade: str = "",
         grade_detail: str = "",
+        asset: Optional[str] = None,
     ) -> Optional[dict]:
         """
         Internal method สำหรับ open position ทั้ง LONG และ SHORT
         """
+        symbol = asset or self.symbol
+
         if not self.trading_enabled:
-            price = await self.data_fetcher.get_current_price()
+            price = await self.data_fetcher.get_current_price(symbol)
             logger.warning(
-                f"Executor: TRADING_ENABLED=false — SIMULATED {side} "
-                f"size={size} ETH leverage={leverage}x TP={tp} SL={sl}"
+                f"Executor: TRADING_ENABLED=false — SIMULATED {side} {symbol} "
+                f"size={size} leverage={leverage}x TP={tp} SL={sl}"
             )
             trade_id = await self.db.save_trade(
                 side=side,
@@ -106,24 +113,25 @@ class Executor:
                 reason=reason,
                 grade=grade,
                 grade_detail=grade_detail,
+                asset=symbol,
             )
             self._current_trade_id = trade_id
             return {"simulated": True, "side": side, "size": size, "tp": tp, "sl": sl, "trade_id": trade_id}
 
         try:
             logger.info(
-                f"Executor: Opening {side} | size={size} ETH | "
+                f"Executor: Opening {side} {symbol} | size={size} | "
                 f"leverage={leverage}x | TP={tp} | SL={sl}"
             )
 
             # Step 1 — ตั้ง leverage
-            await self.exchange.set_leverage(leverage, self.symbol)
+            await self.exchange.set_leverage(leverage, symbol)
             logger.debug(f"Leverage set: {leverage}x")
 
             # Step 2 — ส่ง market order
             ccxt_side = "buy" if side == "LONG" else "sell"
             order = await self.exchange.create_market_order(
-                symbol=self.symbol,
+                symbol=symbol,
                 side=ccxt_side,
                 amount=size,
             )
@@ -133,7 +141,7 @@ class Executor:
             # Step 3 — ตั้ง TP order (take profit)
             tp_side = "sell" if side == "LONG" else "buy"
             tp_order = await self.exchange.create_order(
-                symbol=self.symbol,
+                symbol=symbol,
                 type="TAKE_PROFIT_MARKET",
                 side=tp_side,
                 amount=size,
@@ -143,7 +151,7 @@ class Executor:
 
             # Step 4 — ตั้ง SL order (stop loss)
             sl_order = await self.exchange.create_order(
-                symbol=self.symbol,
+                symbol=symbol,
                 type="STOP_MARKET",
                 side=tp_side,
                 amount=size,
@@ -161,6 +169,7 @@ class Executor:
                 reason=reason,
                 grade=grade,
                 grade_detail=grade_detail,
+                asset=symbol,
             )
             self._current_trade_id = trade_id
 

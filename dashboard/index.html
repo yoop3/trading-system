@@ -173,10 +173,10 @@
       <div style="overflow-x:auto">
         <table class="table">
           <thead><tr>
-            <th>เวลา</th><th>Side</th><th>Grade</th><th>Entry</th><th>Exit</th><th>PnL</th><th>Status</th><th>เหตุผล</th>
+            <th>เวลา</th><th>Asset</th><th>Side</th><th>Grade</th><th>Entry</th><th>Exit</th><th>PnL</th><th>Status</th><th>เหตุผล</th>
           </tr></thead>
           <tbody id="trades-tbody">
-            <tr><td colspan="8" style="text-align:center;color:var(--muted)">ยังไม่มี trade</td></tr>
+            <tr><td colspan="9" style="text-align:center;color:var(--muted)">ยังไม่มี trade</td></tr>
           </tbody>
         </table>
       </div>
@@ -188,13 +188,13 @@
 <script>
 const AGENT_ICONS = {
   technical: '📊', macro: '🌐', sentiment: '😨',
-  news: '📰', whale: '🐋', risk: '🛡️', master: '🤖'
+  news: '📰', whale: '🐋', risk: '🛡️', master: '🤖', smc: '🧠'
 };
 const AGENT_NAMES = {
   technical: 'Technical', macro: 'Macro', sentiment: 'Sentiment',
-  news: 'News', whale: 'Whale', risk: 'Risk', master: 'Master'
+  news: 'News', whale: 'Whale', risk: 'Risk', master: 'Master', smc: 'SMC (XAUUSDT)'
 };
-const AGENT_ORDER = ['technical', 'macro', 'sentiment', 'news', 'whale', 'risk', 'master'];
+const AGENT_ORDER = ['technical', 'macro', 'sentiment', 'news', 'whale', 'risk', 'master', 'smc'];
 
 let pnlChart = null;
 let ws = null;
@@ -312,10 +312,15 @@ function renderPosition(pos) {
 }
 
 // ---------- Trades ----------
+function assetLabel(asset) {
+  if (!asset) return 'ETHUSDT';
+  return asset.replace('/USDT:USDT', 'USDT');
+}
+
 function renderTrades(trades) {
   const tbody = document.getElementById('trades-tbody');
   if (!trades || trades.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted)">ยังไม่มี trade</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--muted)">ยังไม่มี trade</td></tr>';
     return;
   }
   tbody.innerHTML = trades.map(t => {
@@ -332,6 +337,7 @@ function renderTrades(trades) {
       : '—';
     return `<tr>
       <td>${(t.timestamp || '').slice(11, 19)}</td>
+      <td>${assetLabel(t.asset)}</td>
       <td><span class="badge ${t.side === 'LONG' ? 'badge-long' : 'badge-short'}">${t.side}</span></td>
       <td>${gradeBadge}</td>
       <td>${fmt(t.entry_price)}</td>

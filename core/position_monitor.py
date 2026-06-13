@@ -22,7 +22,7 @@ class PositionMonitor:
 
     async def check(self) -> list[dict]:
         """
-        ตรวจ open trades ทั้งหมด เทียบกับราคาปัจจุบัน
+        ตรวจ open trades ทั้งหมด เทียบกับราคาปัจจุบันของแต่ละ asset
         คืน list ของ trades ที่ปิดในรอบนี้
         """
         closed_this_round = []
@@ -32,10 +32,15 @@ class PositionMonitor:
             if not open_trades:
                 return []
 
-            price = await self.data_fetcher.get_current_price()
+            # ดึงราคาแยกตาม asset (trade เก่าไม่มี asset -> ใช้ symbol หลักของ DataFetcher)
+            prices: dict[str, float] = {}
 
             for trade in open_trades:
-                result = self._check_trade(trade, price)
+                asset = trade.get("asset") or self.data_fetcher.symbol
+                if asset not in prices:
+                    prices[asset] = await self.data_fetcher.get_current_price(asset)
+
+                result = self._check_trade(trade, prices[asset])
                 if result:
                     exit_price, pnl, status = result
                     await self.db.close_trade(trade["id"], exit_price, pnl, status)

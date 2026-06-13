@@ -51,38 +51,41 @@ class DataFetcher:
         """ปิด connection เมื่อเลิกใช้งาน"""
         await self.exchange.close()
 
-    async def get_current_price(self) -> float:
+    async def get_current_price(self, symbol: Optional[str] = None) -> float:
         """
-        ดึงราคาปัจจุบันของ ETH/USDT จาก Binance Testnet
+        ดึงราคาปัจจุบันของ symbol จาก Binance Testnet (default = self.symbol)
         คืนค่าเป็น float เช่น 2136.50
         """
+        symbol = symbol or self.symbol
         try:
-            ticker = await self.exchange.fetch_ticker(self.symbol)
+            ticker = await self.exchange.fetch_ticker(symbol)
             price = float(ticker["last"])
-            logger.debug(f"ราคาปัจจุบัน {self.symbol}: {price}")
+            logger.debug(f"ราคาปัจจุบัน {symbol}: {price}")
             return price
         except Exception as e:
             logger.error(f"get_current_price error: {e}")
             raise
 
-    async def get_ohlcv(self, timeframe: str = "1h", limit: int = 200) -> pd.DataFrame:
+    async def get_ohlcv(self, timeframe: str = "1h", limit: int = 200, symbol: Optional[str] = None) -> pd.DataFrame:
         """
         ดึงข้อมูล OHLCV สำหรับคำนวณ indicators
         timeframe: '5m', '15m', '1h', '4h', '1d'
+        symbol: ระบุเพื่อดึงข้อมูล asset อื่น (default = self.symbol)
         คืน DataFrame มี columns: timestamp, open, high, low, close, volume
         """
+        symbol = symbol or self.symbol
         try:
-            raw = await self.exchange.fetch_ohlcv(self.symbol, timeframe, limit=limit)
+            raw = await self.exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
             df = pd.DataFrame(raw, columns=["timestamp", "open", "high", "low", "close", "volume"])
             df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
             df = df.set_index("timestamp")
             # แปลง dtype เป็น float เพื่อให้ pandas-ta คำนวณได้
             for col in ["open", "high", "low", "close", "volume"]:
                 df[col] = df[col].astype(float)
-            logger.debug(f"get_ohlcv {timeframe}: {len(df)} candles")
+            logger.debug(f"get_ohlcv {symbol} {timeframe}: {len(df)} candles")
             return df
         except Exception as e:
-            logger.error(f"get_ohlcv error ({timeframe}): {e}")
+            logger.error(f"get_ohlcv error ({symbol} {timeframe}): {e}")
             raise
 
     async def get_balance(self) -> dict:

@@ -15,7 +15,8 @@
       "Read(//Users/peerawat.yoouthong/Downloads/**)",
       "Bash(sqlite3 *)",
       "Bash(git add *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(python -m unittest agents.smc_agent.tests.test_detectors -v)"
     ]
   }
 }

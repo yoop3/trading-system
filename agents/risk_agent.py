@@ -5,9 +5,11 @@ risk_agent.py — Risk Manager ที่มีสิทธิ์ VETO ทุก 
 
 import os
 from datetime import datetime, timezone
+from typing import Optional
 from loguru import logger
 
 from agents.base_agent import BaseAgent, AgentSignal
+from agents.smc_agent.config import SMC_CONFIG
 from core.indicators import Indicators
 
 
@@ -44,6 +46,81 @@ class RiskAgent(BaseAgent):
         """implement abstract method — ใช้ check() แทนในการทำงานจริง"""
         return await self._check_risk("HOLD", 0.0, 0.0)
 
+    async def check_smc(self, smc_output: Optional[dict], current_positions: list) -> AgentSignal:
+        """
+        ตรวจ risk สำหรับผลลัพธ์ของ SMC Agent (SMC_Agent_Spec.md - Risk Agent Integration)
+        current_positions: open trades/positions ของ asset เดียวกับ smc_output['asset'] เท่านั้น
+        (ปัจจุบัน Master/Executor ยังไม่ track asset แยก — ผู้เรียกต้อง filter list นี้เอง)
+
+        VETO ถ้า: NO_SETUP, |score| ต่ำกว่า min_score_to_signal, RR tp2 ไม่พอ,
+        หรือ asset นี้มี position เปิดอยู่แล้ว (>= MAX_OPEN_POSITIONS)
+        ถ้าผ่านหมด -> APPROVED พร้อม levels (entry/sl/tp1/tp2) และ recommended size/leverage
+        """
+        if not smc_output:
+            return self._veto("SMC: ไม่มีผลลัพธ์ (analyze error)")
+
+        asset = smc_output.get("asset", "?")
+        signal = smc_output.get("signal", "NO_SETUP")
+        score = smc_output.get("score", 0)
+        confidence = smc_output.get("confidence", 0.0)
+        levels = smc_output.get("levels")
+
+        # Check 1 — ไม่มี setup
+        if signal == "NO_SETUP":
+            return self._veto(f"SMC [{asset}]: NO_SETUP")
+
+        # Check 2 — score ต่ำกว่า threshold
+        min_score = SMC_CONFIG["min_score_to_signal"]
+        if abs(score) < min_score:
+            return self._veto(f"SMC [{asset}]: |score|={abs(score)} < {min_score}")
+
+        # Check 3 — RR ไม่พอ
+        min_tp2_rr = SMC_CONFIG["min_tp2_rr"]
+        rr_tp2 = levels.get("rr_tp2", 0) if levels else 0
+        if not levels or rr_tp2 < min_tp2_rr:
+            return self._veto(f"SMC [{asset}]: RR tp2={rr_tp2} < {min_tp2_rr}")
+
+        # Check 4 — asset นี้มี position เปิดอยู่แล้ว / เต็ม quota
+        if len(current_positions) >= self.MAX_OPEN_POSITIONS:
+            return self._veto(
+                f"SMC [{asset}]: position เปิดอยู่แล้ว "
+                f"({len(current_positions)}/{self.MAX_OPEN_POSITIONS})"
+            )
+
+        # คำนวณ position size จาก SL distance (เหมือน _check_risk แต่ใช้ SL ของ SMC levels)
+        recommended_size = 0.001
+        recommended_leverage = min(self.MAX_LEVERAGE, max(1, int(confidence / 100 * self.MAX_LEVERAGE)))
+        try:
+            balance = await self.data_fetcher.get_balance()
+            total_balance = balance.get("total", 0)
+            trading_enabled = os.getenv("TRADING_ENABLED", "false").lower() == "true"
+            if total_balance == 0 and not trading_enabled:
+                total_balance = float(os.getenv("PAPER_BALANCE", "0"))
+
+            sl_distance = abs(levels["entry"] - levels["sl"])
+            if sl_distance > 0 and total_balance > 0:
+                risk_amount = total_balance * self.RISK_PER_TRADE_PCT
+                recommended_size = max(0.001, round(risk_amount / sl_distance, 3))
+        except Exception as e:
+            logger.warning(f"[risk] SMC size calc failed (ใช้ minimum size): {e}")
+
+        logger.info(
+            f"[risk] SMC [{asset}] APPROVED — {signal} score={score} "
+            f"size={recommended_size} leverage={recommended_leverage}x | levels={levels}"
+        )
+        return AgentSignal(
+            agent_name=self.name,
+            signal="APPROVED",
+            score=float(score),
+            confidence=confidence / 100,
+            reason=f"SMC [{asset}] risk checks passed | {signal} | levels={levels}",
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            next_action=f"Execute SMC {signal} ({asset})",
+            veto=False,
+            recommended_size=recommended_size,
+            recommended_leverage=recommended_leverage,
+        )
+
     async def _check_risk(
         self,
         master_signal: str,
@@ -65,7 +142,7 @@ class RiskAgent(BaseAgent):
             if trading_enabled:
                 open_count = len(await self.data_fetcher.get_open_positions())
             else:
-                open_count = len(await self.db.get_open_trades())
+                open_count = len(await self.db.get_open_trades(asset=self.data_fetcher.symbol))
 
             # Check 1 — Daily loss limit
             if total_balance > 0 and daily_pnl / total_balance < -self.MAX_DAILY_LOSS_PCT:

@@ -18,6 +18,8 @@ from agents.master_agent import MasterAgent
 from agents.news_agent import NewsAgent
 from agents.risk_agent import RiskAgent
 from agents.sentiment_agent import SentimentAgent
+from agents.smc_agent.config import SMC_CONFIG
+from agents.smc_agent.smc_agent import SMCAgent
 from agents.technical_agent import TechnicalAgent
 from agents.whale_agent import WhaleAgent
 from core.data_fetcher import DataFetcher
@@ -59,6 +61,7 @@ class TradingSystem:
         self.whale = WhaleAgent(data_fetcher, db)
         self.risk = RiskAgent(data_fetcher, db)
         self.master = MasterAgent(data_fetcher, db, risk_agent=self.risk)
+        self.smc = SMCAgent(data_fetcher, db)
         self.executor = Executor(data_fetcher, db)
         self.position_monitor = PositionMonitor(data_fetcher, db)
 
@@ -72,6 +75,7 @@ class TradingSystem:
             "whale":     15 * 60,   # ทุก 15 นาที
             "news":      30 * 60,   # ทุก 30 นาที
             "macro":     4 * 60 * 60,  # ทุก 4 ชั่วโมง
+            "smc":       5 * 60,    # ทุก 5 นาที (sync กับ LTF 5m candle)
         }
         # ตั้งให้รอบแรกรันทันที
         self._next_run = {k: 0.0 for k in self._intervals}
@@ -160,6 +164,57 @@ class TradingSystem:
                 f"size={size} ETH @ {price} | TP={tp} SL={sl}"
             )
 
+    async def _run_smc_if_due(self):
+        """
+        รัน SMC Agent (XAUUSDT) ตาม schedule แยกจาก consensus หลัก (ETHUSDT)
+        ไม่เก็บเข้า self._signals เพราะเป็นคนละ asset กับ Master Agent
+        """
+        now = asyncio.get_event_loop().time()
+        if now < self._next_run["smc"]:
+            return
+
+        self.dashboard.update_agent_status("smc", "ANALYZING")
+        signal = await self.smc.run()
+        self.dashboard.update_agent("smc", signal)
+        self._next_run["smc"] = now + self._intervals["smc"]
+
+        await self._handle_smc_signal()
+
+    async def _handle_smc_signal(self):
+        """ส่งผลลัพธ์ SMC Agent ผ่าน Risk Agent แล้ว execute ถ้า APPROVED"""
+        smc_output = self.smc.last_smc_output
+        if not smc_output:
+            return
+
+        current_positions = await self.db.get_open_trades(asset=SMC_CONFIG["symbol"])
+        risk_signal = await self.risk.check_smc(smc_output, current_positions)
+
+        if risk_signal.veto:
+            logger.debug(f"[main] SMC [{SMC_CONFIG['asset']}] risk: {risk_signal.reason}")
+            return
+
+        levels = smc_output["levels"]
+        side = smc_output["signal"]
+        size = risk_signal.recommended_size or 0.001
+        leverage = risk_signal.recommended_leverage or 1
+
+        if side == "LONG":
+            result = await self.executor.open_long(
+                size, leverage, levels["tp1"], levels["sl"],
+                reason=smc_output["reason"], asset=SMC_CONFIG["symbol"],
+            )
+        else:
+            result = await self.executor.open_short(
+                size, leverage, levels["tp1"], levels["sl"],
+                reason=smc_output["reason"], asset=SMC_CONFIG["symbol"],
+            )
+
+        if result:
+            logger.success(
+                f"[main] SMC trade executed: {side} ({SMC_CONFIG['asset']}) "
+                f"size={size} leverage={leverage}x | levels={levels}"
+            )
+
     async def _record_balance(self):
         """บันทึก balance snapshot ทุกชั่วโมง"""
         try:
@@ -197,6 +252,9 @@ class TradingSystem:
                 # Master รันหลัง technical เสมอ
                 if ran_technical:
                     await self._run_master()
+
+                # SMC Agent (XAUUSDT) — รันแยก schedule ของตัวเอง
+                await self._run_smc_if_due()
 
                 # Balance snapshot ทุกชั่วโมง
                 if now - last_balance_snapshot >= balance_interval:
