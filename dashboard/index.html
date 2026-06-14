@@ -188,13 +188,14 @@
 <script>
 const AGENT_ICONS = {
   technical: '📊', macro: '🌐', sentiment: '😨',
-  news: '📰', whale: '🐋', risk: '🛡️', master: '🤖', smc: '🧠'
+  news: '📰', whale: '🐋', risk: '🛡️', master: '🤖', smc_xau: '🧠', smc_btc: '₿'
 };
 const AGENT_NAMES = {
   technical: 'Technical', macro: 'Macro', sentiment: 'Sentiment',
-  news: 'News', whale: 'Whale', risk: 'Risk', master: 'Master', smc: 'SMC (XAUUSDT)'
+  news: 'News', whale: 'Whale', risk: 'Risk', master: 'Master',
+  smc_xau: 'SMC (XAUUSDT)', smc_btc: 'SMC (BTCUSDT)'
 };
-const AGENT_ORDER = ['technical', 'macro', 'sentiment', 'news', 'whale', 'risk', 'master', 'smc'];
+const AGENT_ORDER = ['technical', 'macro', 'sentiment', 'news', 'whale', 'risk', 'master', 'smc_xau', 'smc_btc'];
 
 let pnlChart = null;
 let ws = null;
@@ -336,7 +337,7 @@ function renderTrades(trades) {
       ? `<span class="badge ${gradeClass}" title="${gradeDetailEsc}">${grade}</span>`
       : '—';
     return `<tr>
-      <td>${(t.timestamp || '').slice(11, 19)}</td>
+      <td>${bkkTime(t.timestamp)}</td>
       <td>${assetLabel(t.asset)}</td>
       <td><span class="badge ${t.side === 'LONG' ? 'badge-long' : 'badge-short'}">${t.side}</span></td>
       <td>${gradeBadge}</td>
@@ -413,6 +414,14 @@ function timeAgo(isoStr) {
   if (diff < 60) return `${diff}s ago`;
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   return `${Math.floor(diff / 3600)}h ago`;
+}
+
+function bkkTime(isoStr) {
+  // timestamp จาก backend เป็น UTC แบบไม่มี timezone suffix -> เติม "Z" ก่อนแปลงเป็น Asia/Bangkok (UTC+7)
+  if (!isoStr) return '—';
+  return new Date(isoStr + 'Z').toLocaleTimeString('th-TH', {
+    timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit', second: '2-digit'
+  });
 }
 
 // ---------- WebSocket ----------

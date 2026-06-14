@@ -9,7 +9,6 @@ from typing import Optional
 from loguru import logger
 
 from agents.base_agent import BaseAgent, AgentSignal
-from agents.smc_agent.config import SMC_CONFIG
 from core.indicators import Indicators
 
 
@@ -69,13 +68,13 @@ class RiskAgent(BaseAgent):
         if signal == "NO_SETUP":
             return self._veto(f"SMC [{asset}]: NO_SETUP")
 
-        # Check 2 — score ต่ำกว่า threshold
-        min_score = SMC_CONFIG["min_score_to_signal"]
+        # Check 2 — score ต่ำกว่า threshold (ค่า threshold มาจาก config ของ SMC Agent ตัวนั้นๆ)
+        min_score = smc_output.get("min_score_to_signal", 2)
         if abs(score) < min_score:
             return self._veto(f"SMC [{asset}]: |score|={abs(score)} < {min_score}")
 
         # Check 3 — RR ไม่พอ
-        min_tp2_rr = SMC_CONFIG["min_tp2_rr"]
+        min_tp2_rr = smc_output.get("min_tp2_rr", 1.5)
         rr_tp2 = levels.get("rr_tp2", 0) if levels else 0
         if not levels or rr_tp2 < min_tp2_rr:
             return self._veto(f"SMC [{asset}]: RR tp2={rr_tp2} < {min_tp2_rr}")

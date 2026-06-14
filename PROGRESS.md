@@ -64,6 +64,24 @@
 - ตรวจสอบแล้ว: migration บน DB เก่า (ไม่มี column asset) ทำงานถูกต้อง, `save_trade`/`get_open_trades`
   ทำงานถูกต้องทั้งกรณีระบุ/ไม่ระบุ asset, unit tests เดิม (8) + SMC detector tests (30) ผ่านหมด
 
+### SMC Agent เทรด BTCUSDT เพิ่ม (เพิ่มใหม่)
+- `agents/smc_agent/config.py` — เพิ่ม `BTC_CONFIG` (spread จาก `SMC_CONFIG`, เปลี่ยน `symbol`="BTC/USDT:USDT",
+  `asset`="BTCUSDT", ปรับ `min_fvg_size`=60.0 และ `sl_buffer`=450.0 ตามสเกลราคา BTC เทียบ XAU
+  — **เป็นค่าประมาณเริ่มต้น ยังไม่ผ่าน backtest ควรดู paper trading จริงแล้วปรับ**)
+- `agents/smc_agent/smc_agent.py` — `SMCAgent.__init__` รับ `name` param (default "smc") เพื่อแยก log/signal
+  ของแต่ละ instance (`smc_xau`/`smc_btc`); `last_smc_output` เพิ่ม `min_score_to_signal`/`min_tp2_rr`
+  จาก config ของตัวเอง
+- `agents/risk_agent.py` — `check_smc()` อ่าน threshold (`min_score_to_signal`/`min_tp2_rr`) จาก
+  `smc_output` แทนการ import `SMC_CONFIG` ตรงๆ ทำให้ generalize ใช้ได้กับทุก asset/config
+- `main.py` — สร้าง `self.smc_xau` (SMC_CONFIG) และ `self.smc_btc` (BTC_CONFIG) แยกกัน,
+  `_run_smc_if_due`/`_handle_smc_signal` เปลี่ยนเป็น generic รับ `(key, agent, cfg)` ใช้ร่วมกันทั้งสอง asset
+- `dashboard/index.html` — เพิ่ม agent card "₿ SMC (BTCUSDT)" (key `smc_btc`)
+- หมายเหตุ: weekday-only killzone gate (`session.py`) ใช้ sessions/lookback เดียวกันกับ XAU ทั้งคู่
+  — BTC เทรด 24/7 จริง แต่ยังให้ตรวจ killzone แบบเดียวกับ XAU (Mon-Fri, London/NY) เพื่อความง่าย
+  ถ้าพบว่า BTC มี setup ดีๆ ช่วงเสาร์-อาทิตย์บ่อย ค่อยพิจารณาแยก session config
+- ตรวจสอบแล้ว: BTC_CONFIG/SMCAgent(name=...)/risk_agent.check_smc() generalized ทำงานถูกต้อง,
+  unit tests เดิม (8) + SMC detector tests (32) ผ่านหมด
+
 ### ค้างไว้ทำต่อ (Phase ถัดไป)
 - เก็บข้อมูล closed trades ให้ได้ ~15-20 ไม้ก่อน แล้วดู win rate แยกตามเกรด (A/B/C/D)
 - ถ้าเกรด A/B win rate ดีกว่าชัดเจน → feed สรุป win-rate-by-grade กลับเข้า prompt ของ master_agent (LLM) เป็น "memory"

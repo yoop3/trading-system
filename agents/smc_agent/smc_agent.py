@@ -28,8 +28,8 @@ class SMCAgent(BaseAgent):
     คะแนนรวม: -3 ถึง +3 (criteria_met < 4/6 -> NO_SETUP/HOLD)
     """
 
-    def __init__(self, data_fetcher, db, config: Optional[dict] = None):
-        super().__init__("smc", data_fetcher, db)
+    def __init__(self, data_fetcher, db, config: Optional[dict] = None, name: str = "smc"):
+        super().__init__(name, data_fetcher, db)
         self.config = config or SMC_CONFIG
         self.last_smc_output: Optional[dict] = None
 
@@ -122,6 +122,8 @@ class SMCAgent(BaseAgent):
                 "confidence": confidence_pct,
                 "criteria": criteria,
                 "levels": levels,
+                "min_score_to_signal": cfg["min_score_to_signal"],
+                "min_tp2_rr": cfg["min_tp2_rr"],
                 "context": {
                     "fvg_fill_pct": relevant_fvg["fill_pct"] if relevant_fvg else None,
                     "session": session_name,

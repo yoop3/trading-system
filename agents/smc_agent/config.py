@@ -45,3 +45,14 @@ SMC_CONFIG = {
     # Scoring — ใช้โดย Risk Agent: |score| ต้อง >= ค่านี้ จึงผ่าน
     "min_score_to_signal": 2,
 }
+
+# BTC_CONFIG — เหมือน SMC_CONFIG แต่เปลี่ยน symbol/asset เป็น BTCUSDT
+# min_fvg_size/sl_buffer ปรับสเกลตามราคา BTC (~30 เท่าของ XAU) -> เป็นค่าประมาณเริ่มต้น
+# ควรดู paper trading จริงแล้วปรับ (กลยุทธ์เดียวกัน เกณฑ์อื่นๆ เป็น % หรือจำนวน bar ไม่ต้องปรับ)
+BTC_CONFIG = {
+    **SMC_CONFIG,
+    "symbol": "BTC/USDT:USDT",
+    "asset": "BTCUSDT",
+    "min_fvg_size": 60.0,   # points (ของเดิม XAU = 2.0)
+    "sl_buffer": 450.0,     # points (ของเดิม XAU = 15.0)
+}

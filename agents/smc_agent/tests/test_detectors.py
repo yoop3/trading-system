@@ -148,6 +148,18 @@ class TestSession(unittest.TestCase):
         self.assertFalse(in_killzone(ts))
         self.assertEqual(get_session_name(ts), "OUTSIDE")
 
+    def test_weekend_saturday_in_london_hours(self):
+        # 2024-01-20 = วันเสาร์ ตรงกับช่วงเวลา London (08:00) แต่ตลาดจริงปิด -> ไม่ถือเป็น killzone
+        ts = datetime(2024, 1, 20, 8, 0, tzinfo=timezone.utc)
+        self.assertFalse(in_killzone(ts))
+        self.assertEqual(get_session_name(ts), "WEEKEND")
+
+    def test_weekend_sunday_in_new_york_hours(self):
+        # 2024-01-21 = วันอาทิตย์ ตรงกับช่วงเวลา New York (13:00) แต่ตลาดจริงปิด -> ไม่ถือเป็น killzone
+        ts = datetime(2024, 1, 21, 13, 0, tzinfo=timezone.utc)
+        self.assertFalse(in_killzone(ts))
+        self.assertEqual(get_session_name(ts), "WEEKEND")
+
 
 class TestStopHunt(unittest.TestCase):
     def _base_rows(self):
