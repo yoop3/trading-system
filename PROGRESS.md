@@ -9,6 +9,7 @@
 - [x] Phase 6: Pre-deployment (DigitalOcean ready) ✅
 - [x] Phase 7: **11-Agent BTC+XAU Rebuild** ✅ (2026-06-17)
 - [x] Phase 8: **13-Agent Expansion + Bug Fixes** ✅ (2026-06-17)
+- [x] Phase 9: **Signal Quality Fixes** ✅ (2026-06-17)
 
 ## ทำล่าสุดถึง
 **13-Agent BTC+XAU System** — Bug fixes + Architecture expansion
@@ -57,6 +58,22 @@
 #### ทดสอบแล้ว
 - import test ทุก agent ผ่านหมด (python3 -c "import main" → OK)
 - BTC_TOTAL_WEIGHT = 14.0 ✅, XAU_TOTAL_WEIGHT = 12.5 ✅
+
+### Phase 9: Signal Quality Fixes (2026-06-17)
+
+1. **Macro XAU Conf 0% fix** (`macro_xau_agent.py`)
+   - เพิ่ม `confidence = max(0.10, confidence)` หลังคำนวณ
+   - ผล: ถ้า agent ทำงานสำเร็จแต่ตลาด neutral → confidence ขั้นต่ำ 10% (ไม่ใช่ 0%)
+
+2. **Master XAU Logic fix** (`master_agent.py`)
+   - `XAU_MIN_WEIGHT_RATIO = 0.0` (เปลี่ยนจาก 0.40)
+   - ผล: ถ้า `total_score > 5` → LONG ทันที ไม่ต้องรอว่า weight เกิน 40%
+   - หลักการ: total weighted score คือ consensus แล้ว ไม่จำเป็นต้องตรวจซ้ำ
+
+3. **SMC BTC/XAU Ranging fallback** (`smc_btc_agent.py`, `smc_xau_agent.py`)
+   - BTC: ถ้า `score==0 AND htf_trend==RANGING AND active_fvgs` → score=±0.5 ตาม FVG type, confidence≥20%
+   - XAU: ถ้า `score==0 AND active_fvgs` → score=±0.5 ตาม FVG type, confidence≥20%
+   - ผล: Master Agent ได้ input เล็กน้อย (±0.5×weight) แม้ตลาด ranging — แทน 0.0 ตลอด
 
 ## ทำล่าสุดถึง (Phase 7)
 **11-Agent BTC+XAU System** — Rebuild จาก 7-agent ETH เป็น 11-agent BTC+XAU

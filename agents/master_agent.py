@@ -45,7 +45,7 @@ XAU_TOTAL_WEIGHT = sum(XAU_WEIGHTS.values())  # 12.5
 
 XAU_LONG_THRESHOLD  = +5.0
 XAU_SHORT_THRESHOLD = -5.0
-XAU_MIN_WEIGHT_RATIO = 0.40  # 40% of 12.5 = 5.0 weight ขั้นต่ำ
+XAU_MIN_WEIGHT_RATIO = 0.0  # ไม่ใช้ weight ratio gate สำหรับ XAU — total_score เกิน threshold ก็พอ
 
 
 @dataclass

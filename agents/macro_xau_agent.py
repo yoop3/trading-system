@@ -172,6 +172,7 @@ class MacroXAUAgent(BaseAgent):
 
             score = max(-9.0, min(9.0, score))
             confidence = min(abs(score) / 9.0, 1.0)
+            confidence = max(0.10, confidence)  # ขั้นต่ำ 10% เมื่อ agent ทำงานสำเร็จ
 
             # Economic Calendar: USD High Impact event ใน 24h → confidence ×0.7
             has_news, news_title = await _check_high_impact_news(now_utc, window_hours=24)

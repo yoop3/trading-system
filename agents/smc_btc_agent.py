@@ -167,6 +167,15 @@ class SMCBTCAgent(BaseAgent):
             score         = score_result["score"]
             confidence_pct = score_result["confidence"]
 
+            # Fallback: RANGING + active FVG → ±0.5 ตาม FVG direction
+            # ทำให้ master มี input ที่มีความหมายแม้ตลาด ranging (แทน 0.0 เสมอ)
+            if score == 0 and htf_trend == "RANGING" and active_fvgs:
+                latest_fvg = active_fvgs[-1]
+                score = 0.5 if latest_fvg["type"] == "BULL" else -0.5
+                final_signal = "LONG" if score > 0 else "SHORT"
+                confidence_pct = max(confidence_pct, 20.0)
+                logger.debug(f"[smc_btc] RANGING+FVG fallback score {score:+.1f} ({latest_fvg['type']})")
+
             reason = self._build_reason(active_fvgs, htf_trend, session_name, stop_hunt, displacement, ob)
 
             self.last_smc_output = {

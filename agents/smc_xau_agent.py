@@ -167,6 +167,15 @@ class SMCXAUAgent(BaseAgent):
             score          = score_result["score"]
             confidence_pct = score_result["confidence"]
 
+            # Fallback: ไม่มี setup ชัดเจน (score=0) แต่มี active FVG → ±0.5 ตาม FVG direction
+            # XAU มักอยู่ใน ranging phase นาน → ให้ master มี signal อ่อนๆ ไว้ประกอบการตัดสิน
+            if score == 0 and active_fvgs:
+                latest_fvg = active_fvgs[-1]
+                score = 0.5 if latest_fvg["type"] == "BULL" else -0.5
+                final_signal = "LONG" if score > 0 else "SHORT"
+                confidence_pct = max(confidence_pct, 20.0)
+                logger.debug(f"[smc_xau] active FVG fallback score {score:+.1f} ({latest_fvg['type']})")
+
             reason = self._build_reason(
                 active_fvgs, session_name, stop_hunt, displacement, ob, near_news, round_liq, price
             )
