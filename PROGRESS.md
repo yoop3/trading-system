@@ -11,8 +11,49 @@
 - [x] Phase 8: **13-Agent Expansion + Bug Fixes** ✅ (2026-06-17)
 - [x] Phase 9: **Signal Quality Fixes** ✅ (2026-06-17)
 - [x] Phase 10: **Confidence & Master Fixes** ✅ (2026-06-17)
+- [x] Phase 11: **Signal Reversal Close + Unrealized PnL Dashboard** ✅ (2026-06-17)
 
 ## ทำล่าสุดถึง
+**Phase 11: Signal Reversal Auto-Close + Open Position PnL**
+
+### Phase 11: Signal Reversal Close + Unrealized PnL Dashboard (2026-06-17)
+
+#### Signal Reversal Close Logic (4 เงื่อนไข)
+**ไฟล์: `core/database.py`**
+- เพิ่ม `get_recent_master_decisions_for_asset(asset_prefix, limit=3)` — query `master_decisions WHERE final_signal LIKE 'BTC:%'` ORDER BY id DESC
+
+**ไฟล์: `core/executor.py`**
+- เพิ่ม `TAKER_FEE_PCT = 0.0005` class constant
+- เพิ่ม `close_paper_position(asset, reason)` — ปิด paper trades ทุก trade สำหรับ asset นั้น คำนวณ net PnL (gross - fee) บันทึกลง DB
+
+**ไฟล์: `main.py`**
+- เพิ่ม `_check_reversal_and_close()` helper ใน `TradingSystem`:
+  - Condition 1: signal ตรงข้ามกับ side ของ position ปัจจุบัน
+  - Condition 2: `|total_score| > reversal_score_min` (BTC: 8, XAU: 7)
+  - Condition 3: `master_conf >= 0.60` (60%)
+  - Condition 4: signal ติดต่อกัน >= 3 รอบ (ตรวจจาก `master_decisions` DB)
+  - ถ้าผ่านทุกข้อ → ปิด position → reload positions → Risk Agent ตรวจใหม่
+- `_run_btc_master()`: เรียก `_check_reversal_and_close(reversal_score_min=8.0)` ก่อน Risk check
+- `_run_xau_master()`: เรียก `_check_reversal_and_close(reversal_score_min=7.0)` ก่อน Risk check
+
+#### Unrealized PnL Dashboard
+**ไฟล์: `dashboard/server.py`**
+- เพิ่ม `_TAKER_FEE_PCT = 0.0005` class constant
+- เพิ่ม `paper_positions: []` ใน initial state
+- ใน `_refresh_state()`: query `get_open_trades()` → fetch current price → คำนวณ unrealized PnL (gross - close-side fee) → เก็บใน `state["paper_positions"]`
+
+**ไฟล์: `dashboard/index.html`**
+- เพิ่ม card "Open Paper Positions (Unrealized PnL)" ระหว่าง Overview กับ Paper Trade Stats
+- `renderPaperPositions(positions)` แสดงตาราง: Trade ID, Asset, Side, Entry, Current, Size, Unrealized PnL (สีเขียว/แดง), เวลาเปิด
+- เรียกใน `render(state)` ทุกครั้งที่ได้ WebSocket update
+
+#### หลักการ
+- ถ้าไม่ครบ 4 เงื่อนไข → ถือ position เดิม รอ signal ยืนยันรอบต่อไป
+- ปิดแล้ว Risk Agent ยังต้องอนุมัติก่อนเปิดใหม่ (เหมือน normal flow)
+- Unrealized PnL อัปเดตทุก 5 วินาทีตาม broadcast loop
+
+---
+
 **13-Agent BTC+XAU System** — Bug fixes + Architecture expansion
 
 ### Phase 8: 13-Agent Expansion + Bug Fixes (2026-06-17)

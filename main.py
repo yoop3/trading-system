@@ -123,11 +123,85 @@ class TradingSystem:
         return True
 
     # ──────────────────────────────────────────────
+    # Reversal close helper
+    # ──────────────────────────────────────────────
+
+    async def _check_reversal_and_close(
+        self,
+        asset_symbol: str,
+        asset_prefix: str,
+        decision,
+        current_positions: list,
+        reversal_score_min: float,
+        master_conf: float,
+    ) -> bool:
+        """
+        ตรวจ 4 เงื่อนไขสำหรับปิด position เมื่อ signal กลับทาง:
+        1. signal ตรงข้ามกับ position ปัจจุบัน
+        2. signal ติดต่อกัน >= 3 รอบ (จาก master_decisions DB)
+        3. |weighted_score| > reversal_score_min
+        4. master_conf >= 60%
+        คืน True ถ้าปิด position ไปแล้ว
+        """
+        if not current_positions:
+            return False
+
+        pos_side   = current_positions[0]["side"]
+        new_signal = decision.signal
+        opposite   = {"LONG": "SHORT", "SHORT": "LONG"}
+
+        # Condition 1 — signal กลับทาง
+        if new_signal != opposite.get(pos_side):
+            return False
+
+        # Condition 3 — score แรงพอ
+        if abs(decision.total_score) <= reversal_score_min:
+            logger.debug(
+                f"[reversal] {asset_prefix} score {decision.total_score:+.1f} "
+                f"≤ ±{reversal_score_min} — ยังไม่ปิด"
+            )
+            return False
+
+        # Condition 4 — confidence >= 60%
+        if master_conf < 0.60:
+            logger.debug(f"[reversal] {asset_prefix} conf {master_conf:.0%} < 60% — ยังไม่ปิด")
+            return False
+
+        # Condition 2 — signal ติดต่อกัน >= 3 รอบ
+        recent = await self.db.get_recent_master_decisions_for_asset(asset_prefix, limit=3)
+        if len(recent) < 3:
+            logger.debug(
+                f"[reversal] {asset_prefix} history {len(recent)}/3 รอบ — ยังไม่ปิด"
+            )
+            return False
+
+        expected = f"{asset_prefix}:{new_signal}"
+        if not all(r["final_signal"] == expected for r in recent):
+            logger.debug(
+                f"[reversal] {asset_prefix} signal ไม่ consistent "
+                f"{[r['final_signal'] for r in recent]}"
+            )
+            return False
+
+        # ✅ ทุกเงื่อนไขผ่าน → ปิด position
+        logger.warning(
+            f"[reversal] {asset_prefix} CLOSING {pos_side} → {new_signal} "
+            f"(score={decision.total_score:+.1f}, conf={master_conf:.0%}, 3 รอบติด)"
+        )
+        if self.executor.trading_enabled:
+            await self.executor.close_position()
+        else:
+            await self.executor.close_paper_position(
+                asset_symbol, reason=f"reversal {pos_side}→{new_signal}"
+            )
+        return True
+
+    # ──────────────────────────────────────────────
     # BTC pipeline
     # ──────────────────────────────────────────────
 
     async def _run_btc_master(self):
-        """Master BTC decision → Risk (เสมอ) → Execute"""
+        """Master BTC decision → Reversal check → Risk (เสมอ) → Execute"""
         if not self._btc_signals:
             return
 
@@ -135,9 +209,22 @@ class TradingSystem:
         self.dashboard.update_master_btc(btc_decision)
 
         current_positions = await self.db.get_open_trades(asset=self.BTC_SYMBOL)
-        # confidence จาก weighted score — สอดคล้องกับที่แสดงใน dashboard
-        # BTC threshold ±6 → score=12 คือ confidence 100%
+        # confidence จาก weighted score — BTC threshold ±6 → score=12 คือ 100%
         master_conf = min(abs(btc_decision.total_score) / 12.0, 1.0)
+
+        # Reversal check: ปิด position ถ้า signal กลับทางครบ 4 เงื่อนไข
+        # BTC: reversal_score_min = 8 (threshold 6 + 2)
+        closed_by_reversal = await self._check_reversal_and_close(
+            asset_symbol=self.BTC_SYMBOL,
+            asset_prefix="BTC",
+            decision=btc_decision,
+            current_positions=current_positions,
+            reversal_score_min=8.0,
+            master_conf=master_conf,
+        )
+        if closed_by_reversal:
+            # reload positions หลังปิด ก่อน risk check
+            current_positions = await self.db.get_open_trades(asset=self.BTC_SYMBOL)
 
         # Risk runs เสมอ — แม้แต่ตอน HOLD
         self.dashboard.update_agent_status("risk", "ANALYZING")
@@ -198,7 +285,7 @@ class TradingSystem:
     # ──────────────────────────────────────────────
 
     async def _run_xau_master(self):
-        """Master XAU decision → Risk (เสมอ) → Execute"""
+        """Master XAU decision → Reversal check → Risk (เสมอ) → Execute"""
         if not self._xau_signals:
             return
 
@@ -206,11 +293,22 @@ class TradingSystem:
         self.dashboard.update_master_xau(xau_decision)
 
         current_positions = await self.db.get_open_trades(asset=self.XAU_SYMBOL)
-        # confidence จาก weighted score — สอดคล้องกับที่แสดงใน dashboard
-        # XAU threshold ±5 → score=10 คือ confidence 100%
+        # confidence จาก weighted score — XAU threshold ±5 → score=10 คือ 100%
         master_conf = min(abs(xau_decision.total_score) / 10.0, 1.0)
 
-        # Risk runs เสมอ — แม้แต่ตอน HOLD (XAU risk check ไม่ update dashboard ซ้ำถ้า BTC ทำไปแล้ว)
+        # Reversal check: XAU reversal_score_min = 7 (threshold 5 + 2)
+        closed_by_reversal = await self._check_reversal_and_close(
+            asset_symbol=self.XAU_SYMBOL,
+            asset_prefix="XAU",
+            decision=xau_decision,
+            current_positions=current_positions,
+            reversal_score_min=7.0,
+            master_conf=master_conf,
+        )
+        if closed_by_reversal:
+            current_positions = await self.db.get_open_trades(asset=self.XAU_SYMBOL)
+
+        # Risk runs เสมอ — แม้แต่ตอน HOLD
         risk_signal = await self.risk.check_asset(
             asset_symbol=self.XAU_SYMBOL,
             master_signal=xau_decision.signal,

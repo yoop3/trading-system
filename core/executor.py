@@ -187,6 +187,51 @@ class Executor:
             logger.error(f"Executor._open_position ({side}) error: {e}")
             return None
 
+    TAKER_FEE_PCT = 0.0005  # Binance Futures taker fee ~0.05% ต่อฝั่ง
+
+    async def close_paper_position(self, asset: str, reason: str = "signal_reversal") -> list:
+        """
+        ปิด paper trade (TRADING_ENABLED=false) ที่ OPEN อยู่สำหรับ asset นี้
+        คำนวณ PnL จากราคาปัจจุบัน หักค่าธรรมเนียม แล้วบันทึกลง DB
+        คืน list ของ trades ที่ปิดแล้ว
+        """
+        trades = await self.db.get_open_trades(asset=asset)
+        if not trades:
+            logger.warning(f"close_paper_position: ไม่มี open paper trade สำหรับ {asset}")
+            return []
+
+        closed = []
+        try:
+            exit_price = await self.data_fetcher.get_current_price(asset)
+        except Exception as e:
+            logger.error(f"close_paper_position: get_current_price error: {e}")
+            return []
+
+        for trade in trades:
+            entry = float(trade.get("entry_price", 0) or 0)
+            size  = float(trade.get("size", 0) or 0)
+            side  = trade.get("side", "")
+            if not entry or not size:
+                continue
+
+            gross_pnl = (exit_price - entry) * size if side == "LONG" else (entry - exit_price) * size
+            fee       = (entry + exit_price) * size * self.TAKER_FEE_PCT
+            net_pnl   = round(gross_pnl - fee, 4)
+
+            await self.db.close_trade(
+                trade_id=trade["id"],
+                exit_price=exit_price,
+                pnl=net_pnl,
+                status="CLOSED",
+            )
+            logger.info(
+                f"[executor] Paper trade #{trade['id']} closed ({reason}) | "
+                f"{side} entry={entry:.2f} exit={exit_price:.2f} PnL={net_pnl:+.4f}"
+            )
+            closed.append({"trade_id": trade["id"], "exit": exit_price, "pnl": net_pnl})
+
+        return closed
+
     async def close_position(self) -> Optional[dict]:
         """
         ปิด position ปัจจุบันด้วย market order

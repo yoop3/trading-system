@@ -36,6 +36,7 @@ class DashboardServer:
             "today_pnl": 0.0,
             "trade_stats": {"total": 0, "wins": 0, "losses": 0, "win_rate": 0,
                             "avg_pnl": 0, "total_pnl": 0, "best_trade": 0, "worst_trade": 0},
+            "paper_positions": [],  # open paper trades พร้อม unrealized PnL
             "last_update": "",
         }
         self._db = None
@@ -178,6 +179,8 @@ class DashboardServer:
                 if websocket in self._connections:
                     self._connections.remove(websocket)
 
+    _TAKER_FEE_PCT = 0.0005  # Binance Futures taker fee ~0.05% ต่อฝั่ง
+
     async def _refresh_state(self) -> None:
         """ดึงข้อมูลล่าสุดจาก DB และ exchange"""
         try:
@@ -189,6 +192,37 @@ class DashboardServer:
                 latest_decision = await self._db.get_latest_master_decision()
                 if latest_decision and not self._state["master_decision"]:
                     self._state["master_decision"] = latest_decision
+
+                # คำนวณ unrealized PnL ของ open paper positions
+                if self._data_fetcher:
+                    open_trades = await self._db.get_open_trades()
+                    paper_positions = []
+                    for t in open_trades:
+                        try:
+                            asset = t.get("asset") or os.getenv("TRADING_SYMBOL", "ETH/USDT:USDT")
+                            current_price = await self._data_fetcher.get_current_price(asset)
+                            entry = float(t.get("entry_price", 0) or 0)
+                            size  = float(t.get("size", 0) or 0)
+                            side  = t.get("side", "LONG")
+                            if not entry or not size:
+                                continue
+                            gross = (current_price - entry) * size if side == "LONG" else (entry - current_price) * size
+                            # ค่าธรรมเนียมฝั่งปิด (ฝั่งเปิดถูกหักไปแล้วตอน open_long/open_short)
+                            fee = (entry + current_price) * size * self._TAKER_FEE_PCT
+                            unrealized = round(gross - fee, 4)
+                            paper_positions.append({
+                                "trade_id": t["id"],
+                                "asset": asset,
+                                "side": side,
+                                "entry_price": entry,
+                                "current_price": current_price,
+                                "size": size,
+                                "unrealized_pnl": unrealized,
+                                "timestamp": t.get("timestamp", ""),
+                            })
+                        except Exception as e:
+                            logger.warning(f"Dashboard: unrealized PnL error trade#{t.get('id')}: {e}")
+                    self._state["paper_positions"] = paper_positions
 
             if self._data_fetcher:
                 try:

@@ -350,3 +350,22 @@ class Database:
         except Exception as e:
             logger.error(f"get_latest_master_decision error: {e}")
             return None
+
+    async def get_recent_master_decisions_for_asset(self, asset_prefix: str, limit: int = 3) -> list:
+        """
+        ดึง master decisions ล่าสุด N รายการสำหรับ asset ที่ระบุ
+        asset_prefix: "BTC" หรือ "XAU" (match กับ final_signal format "BTC:LONG")
+        ใช้ตรวจ signal consistency สำหรับ reversal logic
+        """
+        try:
+            cursor = await self._conn.execute(
+                """SELECT * FROM master_decisions
+                   WHERE final_signal LIKE ?
+                   ORDER BY id DESC LIMIT ?""",
+                (f"{asset_prefix}:%", limit),
+            )
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]
+        except Exception as e:
+            logger.error(f"get_recent_master_decisions_for_asset error: {e}")
+            return []
