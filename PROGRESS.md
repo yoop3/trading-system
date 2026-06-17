@@ -10,6 +10,7 @@
 - [x] Phase 7: **11-Agent BTC+XAU Rebuild** ✅ (2026-06-17)
 - [x] Phase 8: **13-Agent Expansion + Bug Fixes** ✅ (2026-06-17)
 - [x] Phase 9: **Signal Quality Fixes** ✅ (2026-06-17)
+- [x] Phase 10: **Confidence & Master Fixes** ✅ (2026-06-17)
 
 ## ทำล่าสุดถึง
 **13-Agent BTC+XAU System** — Bug fixes + Architecture expansion
@@ -58,6 +59,23 @@
 #### ทดสอบแล้ว
 - import test ทุก agent ผ่านหมด (python3 -c "import main" → OK)
 - BTC_TOTAL_WEIGHT = 14.0 ✅, XAU_TOTAL_WEIGHT = 12.5 ✅
+
+### Phase 10: Confidence & Master Fixes (2026-06-17)
+
+1. **Wyckoff BTC/XAU Conf 0% fix** (`wyckoff_btc_agent.py`, `wyckoff_xau_agent.py`)
+   - `confidence = max(0.10, abs(score)/3.0)` — ขั้นต่ำ 10% เมื่อ agent ทำงานสำเร็จ
+   - Conf 0% เกิดได้แค่ตอน error path เท่านั้น
+
+2. **Master XAU agent count (dashboard label)**
+   - BTC section: "5 specialist" — scoring ใช้ 7 agents (5+news+sentiment)
+   - XAU section: "4 specialist" — scoring ใช้ 6 agents (4+news+sentiment)
+   - label สะท้อนว่า shared agents อยู่ใน SHARED section แต่ยังนับเข้า scoring ทั้งคู่
+
+3. **Master confidence จาก weighted_score (ไม่ใช่ max sub-agent)**
+   - `main.py._run_btc_master()`: `master_conf = min(abs(btc_decision.total_score)/12.0, 1.0)`
+   - `main.py._run_xau_master()`: `master_conf = min(abs(xau_decision.total_score)/10.0, 1.0)`
+   - สอดคล้องกับ formula ใน dashboard และ Risk Agent check
+   - BTC: score=12 (2×threshold) → 100% conf | XAU: score=10 (2×threshold) → 100% conf
 
 ### Phase 9: Signal Quality Fixes (2026-06-17)
 

@@ -135,9 +135,9 @@ class TradingSystem:
         self.dashboard.update_master_btc(btc_decision)
 
         current_positions = await self.db.get_open_trades(asset=self.BTC_SYMBOL)
-        master_conf = max(
-            (s.confidence for s in self._btc_signals.values()), default=0.0
-        )
+        # confidence จาก weighted score — สอดคล้องกับที่แสดงใน dashboard
+        # BTC threshold ±6 → score=12 คือ confidence 100%
+        master_conf = min(abs(btc_decision.total_score) / 12.0, 1.0)
 
         # Risk runs เสมอ — แม้แต่ตอน HOLD
         self.dashboard.update_agent_status("risk", "ANALYZING")
@@ -206,9 +206,9 @@ class TradingSystem:
         self.dashboard.update_master_xau(xau_decision)
 
         current_positions = await self.db.get_open_trades(asset=self.XAU_SYMBOL)
-        master_conf = max(
-            (s.confidence for s in self._xau_signals.values()), default=0.0
-        )
+        # confidence จาก weighted score — สอดคล้องกับที่แสดงใน dashboard
+        # XAU threshold ±5 → score=10 คือ confidence 100%
+        master_conf = min(abs(xau_decision.total_score) / 10.0, 1.0)
 
         # Risk runs เสมอ — แม้แต่ตอน HOLD (XAU risk check ไม่ update dashboard ซ้ำถ้า BTC ทำไปแล้ว)
         risk_signal = await self.risk.check_asset(

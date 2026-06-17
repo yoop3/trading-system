@@ -145,7 +145,7 @@ class WyckoffBTCAgent(BaseAgent):
                         reasons.append("BTC Volume: สูงบน down days (supply dominant) -1")
 
             score = max(-3.0, min(3.0, score))
-            confidence = abs(score) / 3.0
+            confidence = max(0.10, abs(score) / 3.0)  # ขั้นต่ำ 10% เมื่อ agent ทำงานสำเร็จ
 
             if score >= 1:
                 signal = "LONG"
