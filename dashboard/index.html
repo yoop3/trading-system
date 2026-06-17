@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI Trading Dashboard — BTC+XAU (11 Agents)</title>
+  <title>AI Trading Dashboard — BTC+XAU (13 Agents)</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
     :root {
       --bg: #0d1117; --card: #161b22; --border: #30363d;
       --text: #e6edf3; --muted: #7d8590; --green: #3fb950;
       --red: #f85149; --yellow: #d29922; --blue: #58a6ff;
-      --purple: #bc8cff;
+      --purple: #bc8cff; --gold: #e3b341;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; }
@@ -23,7 +23,7 @@
     .container { max-width: 1400px; margin: 0 auto; padding: 16px; }
     .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
     .grid-3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; margin-bottom: 16px; }
-    .grid-agents { display: grid; grid-template-columns: repeat(auto-fill,minmax(300px,1fr)); gap: 12px; margin-bottom: 16px; }
+    .grid-agents { display: grid; grid-template-columns: repeat(auto-fill,minmax(300px,1fr)); gap: 12px; }
     .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
     .card-title { font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 8px; }
     .metric-value { font-size: 2rem; font-weight: 700; line-height: 1; }
@@ -37,7 +37,6 @@
     .badge-long { background: rgba(63,185,80,.15); color: var(--green); border: 1px solid var(--green); }
     .badge-short { background: rgba(248,81,73,.15); color: var(--red); border: 1px solid var(--red); }
     .badge-hold { background: rgba(125,133,144,.15); color: var(--muted); border: 1px solid var(--border); }
-    /* Trade grade badge */
     .badge-grade-a { background: rgba(63,185,80,.15); color: var(--green); border: 1px solid var(--green); }
     .badge-grade-b { background: rgba(88,166,255,.15); color: var(--blue); border: 1px solid var(--blue); }
     .badge-grade-c { background: rgba(210,153,34,.15); color: var(--yellow); border: 1px solid var(--yellow); }
@@ -48,6 +47,21 @@
     .progress-green { background: var(--green); }
     .progress-red { background: var(--red); }
     .progress-yellow { background: var(--yellow); }
+    /* Agent section group */
+    .agent-section { margin-bottom: 20px; }
+    .agent-section-header {
+      display: flex; align-items: center; gap: 10px;
+      padding: 6px 0 8px 2px; margin-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .agent-section-label {
+      font-size: .7rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .12em; padding: 3px 10px; border-radius: 20px;
+    }
+    .label-shared { background: rgba(125,133,144,.2); color: var(--muted); border: 1px solid var(--border); }
+    .label-btc { background: rgba(88,166,255,.15); color: var(--blue); border: 1px solid var(--blue); }
+    .label-xau { background: rgba(227,179,65,.15); color: var(--gold); border: 1px solid var(--gold); }
+    .label-control { background: rgba(188,140,255,.15); color: var(--purple); border: 1px solid var(--purple); }
     /* Agent card */
     .agent-card { position: relative; }
     .agent-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
@@ -76,14 +90,7 @@
     .table tr:last-child td { border-bottom: none; }
     /* Chart */
     .chart-wrap { position: relative; height: 200px; }
-    /* Balance row */
-    .balance-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; }
-    .bal-item { text-align: center; }
-    .bal-value { font-size: 1.2rem; font-weight: 700; }
-    .bal-label { font-size: .7rem; color: var(--muted); }
-    /* Countdown */
     #countdown { font-size: .8rem; color: var(--muted); text-align: right; }
-    /* Responsive */
     @media(max-width:768px) { .grid-2,.grid-3 { grid-template-columns:1fr; } }
   </style>
 </head>
@@ -92,7 +99,7 @@
 <header class="header">
   <div>
     <span class="status-dot" id="conn-dot"></span>
-    <h1 style="display:inline">AI Trading System — BTC+XAU (11 Agents)</h1>
+    <h1 style="display:inline">AI Trading System — BTC+XAU (13 Agents)</h1>
   </div>
   <div id="countdown">กำลังโหลด...</div>
 </header>
@@ -154,23 +161,53 @@
     </div>
   </div>
 
-  <!-- Section 2: Agent Cards -->
-  <div class="card-title" style="margin-bottom:8px;padding-left:4px">Agent Signals</div>
-  <div class="grid-agents" id="agents-grid">
-    <!-- Agent cards injected by JS -->
+  <!-- Section 3: Agent Cards (grouped) -->
+  <div id="agents-container">
+    <!-- SHARED -->
+    <div class="agent-section">
+      <div class="agent-section-header">
+        <span class="agent-section-label label-shared">SHARED (2)</span>
+        <span style="font-size:.72rem;color:var(--muted)">ใช้ทั้ง BTC และ XAU</span>
+      </div>
+      <div class="grid-agents" id="grid-shared"></div>
+    </div>
+    <!-- BTC -->
+    <div class="agent-section">
+      <div class="agent-section-header">
+        <span class="agent-section-label label-btc">₿ BTC (6)</span>
+        <span style="font-size:.72rem;color:var(--muted)">BTC/USDT:USDT — threshold ±6 | weight 14.0</span>
+      </div>
+      <div class="grid-agents" id="grid-btc"></div>
+    </div>
+    <!-- XAU -->
+    <div class="agent-section">
+      <div class="agent-section-header">
+        <span class="agent-section-label label-xau">🥇 XAU (5)</span>
+        <span style="font-size:.72rem;color:var(--muted)">XAU/USDT:USDT — threshold ±5 | weight 12.5</span>
+      </div>
+      <div class="grid-agents" id="grid-xau"></div>
+    </div>
+    <!-- Control -->
+    <div class="agent-section">
+      <div class="agent-section-header">
+        <span class="agent-section-label label-control">CONTROL</span>
+        <span style="font-size:.72rem;color:var(--muted)">รันทุกครั้งก่อน execute — APPROVED = ผ่าน risk check</span>
+      </div>
+      <div class="grid-agents" id="grid-control"></div>
+    </div>
   </div>
 
-  <!-- Section 3: Master Decision (Dual BTC + XAU) -->
-  <div class="grid-2" style="margin-bottom:16px">
+  <!-- Section 4: Master Decision -->
+  <div class="grid-2" style="margin-bottom:16px;margin-top:8px">
     <div class="card">
       <div class="card-title">₿ BTC Master Decision</div>
-      <div class="master-score">Score: <strong id="master-btc-score">—</strong> / 14.0</div>
+      <div class="master-score">Score: <strong id="master-btc-score">—</strong> / 14.0 (threshold ±6)</div>
       <div class="master-signal" id="master-btc-signal">—</div>
       <div class="master-reasoning" id="master-btc-reasoning">กำลังรอข้อมูล...</div>
     </div>
     <div class="card">
-      <div class="card-title">🧠 XAU Master Decision</div>
-      <div class="master-score">Score: <strong id="master-xau-score">—</strong> / 5.0</div>
+      <div class="card-title">🥇 XAU Master Decision</div>
+      <div class="master-score">Score: <strong id="master-xau-score">—</strong> / 12.5 (threshold ±5)</div>
       <div class="master-signal" id="master-xau-signal">—</div>
       <div class="master-reasoning" id="master-xau-reasoning">กำลังรอข้อมูล...</div>
     </div>
@@ -194,22 +231,33 @@
 
 <script>
 const AGENT_ICONS = {
-  technical_btc: '📊', whale_btc: '🐋', smc_btc: '₿',
-  macro: '🌐', wyckoff: '📈', sentiment: '😨', news: '📰',
-  smc_xau: '🧠', technical_xau: '🥇',
-  risk: '🛡️', master_btc: '🤖', master_xau: '✨',
+  // shared
+  sentiment: '😨', news: '📰',
+  // btc
+  technical_btc: '📊', whale_btc: '🐋', smc_btc: '₿', macro_btc: '🌐', wyckoff_btc: '📈',
+  master_btc: '🤖',
+  // xau
+  smc_xau: '✨', technical_xau: '🥇', macro_xau: '🌍', wyckoff_xau: '📉',
+  master_xau: '🧠',
+  // control
+  risk: '🛡️',
 };
 const AGENT_NAMES = {
+  sentiment: 'Sentiment', news: 'News',
   technical_btc: 'Technical BTC', whale_btc: 'Whale BTC', smc_btc: 'SMC BTC',
-  macro: 'Macro (BTC)', wyckoff: 'Wyckoff', sentiment: 'Sentiment', news: 'News',
+  macro_btc: 'Macro BTC', wyckoff_btc: 'Wyckoff BTC', master_btc: 'Master BTC',
   smc_xau: 'SMC XAU', technical_xau: 'Technical XAU',
-  risk: 'Risk', master_btc: 'Master BTC', master_xau: 'Master XAU',
+  macro_xau: 'Macro XAU', wyckoff_xau: 'Wyckoff XAU', master_xau: 'Master XAU',
+  risk: 'Risk',
 };
-const AGENT_ORDER = [
-  'technical_btc', 'whale_btc', 'smc_btc', 'macro', 'wyckoff', 'sentiment', 'news',
-  'smc_xau', 'technical_xau',
-  'risk', 'master_btc', 'master_xau',
-];
+
+// กลุ่ม agent ตามประเภท
+const GROUPS = {
+  shared:  ['sentiment', 'news'],
+  btc:     ['technical_btc', 'whale_btc', 'smc_btc', 'macro_btc', 'wyckoff_btc', 'master_btc'],
+  xau:     ['smc_xau', 'technical_xau', 'macro_xau', 'wyckoff_xau', 'master_xau'],
+  control: ['risk'],
+};
 
 let pnlChart = null;
 let ws = null;
@@ -257,7 +305,7 @@ function renderAgentCard(name, data) {
   return `
     <div class="card agent-card">
       <div class="agent-header">
-        <span class="agent-name">${icon} ${displayName} Agent</span>
+        <span class="agent-name">${icon} ${displayName}</span>
         <span class="agent-status ${statusClass}">${status}</span>
       </div>
       <div style="margin-bottom:8px">
@@ -325,7 +373,7 @@ function renderPosition(pos) {
     <div class="badge ${side === 'long' ? 'badge-long' : 'badge-short'}" style="margin-bottom:6px">
       ${side.toUpperCase()}
     </div><br>
-    Entry: ${entry} | Size: ${size} ETH<br>
+    Entry: ${entry} | Size: ${size}<br>
     Unrealized PnL: <span class="${upnlClass}">${upnl >= 0 ? '+' : ''}${fmt(upnl)}</span>`;
 }
 
@@ -396,27 +444,26 @@ function renderStats(s) {
 
 // ---------- Main Render ----------
 function render(state) {
-  // Agents
-  const grid = document.getElementById('agents-grid');
-  grid.innerHTML = AGENT_ORDER.map(name => renderAgentCard(name, state.agents?.[name])).join('');
+  const agents = state.agents || {};
+
+  // Render each group into its own grid
+  document.getElementById('grid-shared').innerHTML =
+    GROUPS.shared.map(n => renderAgentCard(n, agents[n])).join('');
+  document.getElementById('grid-btc').innerHTML =
+    GROUPS.btc.map(n => renderAgentCard(n, agents[n])).join('');
+  document.getElementById('grid-xau').innerHTML =
+    GROUPS.xau.map(n => renderAgentCard(n, agents[n])).join('');
+  document.getElementById('grid-control').innerHTML =
+    GROUPS.control.map(n => renderAgentCard(n, agents[n])).join('');
 
   // Dual Master
   renderMasterDecision('master-btc-signal', 'master-btc-score', 'master-btc-reasoning', state.master_btc_decision);
   renderMasterDecision('master-xau-signal', 'master-xau-score', 'master-xau-reasoning', state.master_xau_decision);
 
-  // Balance
   renderBalance(state.balance, state.today_pnl || 0);
-
-  // Position
   renderPosition(state.position);
-
-  // Trades
   renderTrades(state.trades);
-
-  // Stats
   renderStats(state.trade_stats);
-
-  // Chart
   updateChart(state.balance_history);
 }
 
@@ -435,7 +482,6 @@ function timeAgo(isoStr) {
 }
 
 function bkkTime(isoStr) {
-  // timestamp จาก backend เป็น UTC แบบไม่มี timezone suffix -> เติม "Z" ก่อนแปลงเป็น Asia/Bangkok (UTC+7)
   if (!isoStr) return '—';
   return new Date(isoStr + 'Z').toLocaleTimeString('th-TH', {
     timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit', second: '2-digit'
@@ -478,14 +524,6 @@ function connect() {
 // ---------- Init ----------
 initChart();
 connect();
-
-// Refresh timeAgo every 30s
-setInterval(() => {
-  document.querySelectorAll('.agent-time').forEach(el => {
-    const agentName = el.closest('.agent-card')?.querySelector('.agent-name')?.textContent?.trim();
-    // rebuild will happen on next WS message; this just prevents stale display
-  });
-}, 30000);
 </script>
 </body>
 </html>

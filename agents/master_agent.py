@@ -1,10 +1,10 @@
 """
 master_agent.py — ตัดสินใจแยก BTC และ XAU จาก signals ของ agents
 BTC: 7 agents → weighted score → เทรด BTC/USDT:USDT
-XAU: 2 agents → weighted score → เทรด XAU/USDT:USDT
+XAU: 6 agents → weighted score → เทรด XAU/USDT:USDT
 
 เงื่อนไขเข้า trade BTC: score > +6 หรือ < -6 หรือ LLM (grey zone)
-เงื่อนไขเข้า trade XAU: score > +3 หรือ < -3 (proportional to 5 total weight)
+เงื่อนไขเข้า trade XAU: score > +5 หรือ < -5 (6 agents, total weight 12.5)
 """
 
 import os
@@ -21,8 +21,8 @@ BTC_WEIGHTS: dict[str, float] = {
     "technical_btc": 2.0,
     "whale_btc":     2.0,
     "smc_btc":       3.0,
-    "macro":         2.5,
-    "wyckoff":       2.0,
+    "macro_btc":     2.5,
+    "wyckoff_btc":   2.0,
     "sentiment":     1.5,
     "news":          1.0,
 }
@@ -32,16 +32,20 @@ BTC_LONG_THRESHOLD  = +6.0
 BTC_SHORT_THRESHOLD = -6.0
 BTC_MIN_WEIGHT_RATIO = 0.35  # 35% of 14.0 = 4.9 weight ขั้นต่ำ
 
-# ========== XAU Weights (2 agents) ==========
+# ========== XAU Weights (6 agents) ==========
 XAU_WEIGHTS: dict[str, float] = {
+    "wyckoff_xau":   2.0,
+    "macro_xau":     3.0,
     "smc_xau":       3.0,
     "technical_xau": 2.0,
+    "news":          2.0,
+    "sentiment":     0.5,
 }
-XAU_TOTAL_WEIGHT = sum(XAU_WEIGHTS.values())  # 5.0
+XAU_TOTAL_WEIGHT = sum(XAU_WEIGHTS.values())  # 12.5
 
-XAU_LONG_THRESHOLD  = +3.0
-XAU_SHORT_THRESHOLD = -3.0
-XAU_MIN_WEIGHT_RATIO = 0.40  # 40% of 5.0 = 2.0 weight ขั้นต่ำ
+XAU_LONG_THRESHOLD  = +5.0
+XAU_SHORT_THRESHOLD = -5.0
+XAU_MIN_WEIGHT_RATIO = 0.40  # 40% of 12.5 = 5.0 weight ขั้นต่ำ
 
 
 @dataclass
@@ -98,7 +102,7 @@ class MasterAgent(BaseAgent):
         )
 
     async def decide_xau(self, signals: dict[str, AgentSignal]) -> MasterDecision:
-        """ตัดสินใจ XAU จาก 2 agents — ไม่ใช้ LLM (ใช้ HOLD ถ้า grey zone)"""
+        """ตัดสินใจ XAU จาก 6 agents — ไม่ใช้ LLM (ใช้ HOLD ถ้า grey zone)"""
         return await self._decide(
             signals=signals,
             weights=XAU_WEIGHTS,

@@ -73,11 +73,12 @@ class DashboardServer:
             "used_llm": decision.used_llm,
             "timestamp": decision.timestamp,
         }
+        # confidence: score=6 (threshold) → 50%, score=12 → 100%
         self._state["agents"]["master_btc"] = {
             "name": "master_btc",
             "signal": decision.signal,
             "score": round(decision.total_score, 2),
-            "confidence": min(abs(decision.total_score) / 14.0, 1.0),
+            "confidence": min(abs(decision.total_score) / 12.0, 1.0),
             "reason": decision.reasoning,
             "next_action": "Claude LLM ช่วยตัดสิน" if decision.used_llm else "Rule-based BTC scoring",
             "status": "DONE",
@@ -93,13 +94,14 @@ class DashboardServer:
             "used_llm": decision.used_llm,
             "timestamp": decision.timestamp,
         }
+        # confidence: score=5 (threshold) → 50%, score=10 → 100%
         self._state["agents"]["master_xau"] = {
             "name": "master_xau",
             "signal": decision.signal,
             "score": round(decision.total_score, 2),
-            "confidence": min(abs(decision.total_score) / 5.0, 1.0),
+            "confidence": min(abs(decision.total_score) / 10.0, 1.0),
             "reason": decision.reasoning,
-            "next_action": "Rule-based XAU scoring",
+            "next_action": "Rule-based XAU scoring (6 agents)",
             "status": "DONE",
             "timestamp": decision.timestamp,
         }

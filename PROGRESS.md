@@ -8,8 +8,57 @@
 - [x] Phase 5: Integration & Main ✅
 - [x] Phase 6: Pre-deployment (DigitalOcean ready) ✅
 - [x] Phase 7: **11-Agent BTC+XAU Rebuild** ✅ (2026-06-17)
+- [x] Phase 8: **13-Agent Expansion + Bug Fixes** ✅ (2026-06-17)
 
 ## ทำล่าสุดถึง
+**13-Agent BTC+XAU System** — Bug fixes + Architecture expansion
+
+### Phase 8: 13-Agent Expansion + Bug Fixes (2026-06-17)
+
+#### Bug Fixes
+1. **Confidence 0% (Root Cause)**: ไม่ใช่ formula bug — เกิดจาก XAU agents ขาด macro/wyckoff input
+   แก้ด้วยการเพิ่ม macro_xau + wyckoff_xau เข้า XAU pipeline (ดู #3 #4)
+   Master confidence formula แก้: BTC=abs(score)/12.0, XAU=abs(score)/10.0 (ที่ threshold → 50%)
+2. **Risk Agent IDLE**: แก้ใน `check_asset()` — HOLD path ตอนนี้ return APPROVED+monitoring
+   แทน VETO, dashboard แสดง DONE/APPROVED เสมอแม้ master HOLD
+
+#### ไฟล์ใหม่ (4)
+- `agents/macro_btc_agent.py` — rename+refactor จาก `macro_agent.py`, class `MacroBTCAgent`, name `"macro_btc"`
+- `agents/wyckoff_btc_agent.py` — rename+refactor จาก `wyckoff_agent.py`, class `WyckoffBTCAgent`, name `"wyckoff_btc"`
+- `agents/macro_xau_agent.py` — **NEW**: XAU 4H/1D macro analysis + economic calendar check
+  - Economic calendar: `https://nfs.faireconomy.media/ff_calendar_thisweek.json`
+  - USD High Impact events (CPI/NFP/FOMC) ใน 24h → confidence ×0.7
+  - Rules: Market Structure HH/HL ±3, EMA200 4H ±2, Weekly ±2, Monthly (10% threshold) ±2
+  - Max score ±9, confidence = min(abs(score)/9, 1.0)
+- `agents/wyckoff_xau_agent.py` — **NEW**: XAU 1D Wyckoff analysis
+  - LOOKBACK=120 วัน (XAU cycles 2-3x ยาวกว่า BTC — ใช้ 30-day window แทน 20-day)
+  - Events เดียวกัน: Spring/SOS/SC/UTAD/SOW/BC + volume trend
+  - Score -3..+3, confidence = abs(score)/3.0
+
+#### อัปเดต Master Weights
+- BTC (14.0): `technical_btc×2.0, whale_btc×2.0, smc_btc×3.0, macro_btc×2.5, wyckoff_btc×2.0, sentiment×1.5, news×1.0`
+  - Renamed keys: `macro`→`macro_btc`, `wyckoff`→`wyckoff_btc`
+  - threshold ±6 (ไม่เปลี่ยน)
+- XAU (12.5): `wyckoff_xau×2.0, macro_xau×3.0, smc_xau×3.0, technical_xau×2.0, news×2.0, sentiment×0.5`
+  - threshold ±5 (เปลี่ยนจาก ±3)
+  - min_weight_ratio 40% (5.0 weight ขั้นต่ำ)
+
+#### Dashboard Groups (index.html)
+- **SHARED (2)**: Sentiment, News
+- **BTC (6)**: Technical BTC, Whale BTC, SMC BTC, Macro BTC, Wyckoff BTC, Master BTC
+- **XAU (5)**: SMC XAU, Technical XAU, Macro XAU, Wyckoff XAU, Master XAU
+- **CONTROL**: Risk
+
+#### หมายเหตุ Architecture
+- `_btc_signals["sentiment"]` / `_xau_signals["sentiment"]` ใช้ object เดียวกัน (shared agent)
+- `macro_agent.py` และ `wyckoff_agent.py` ยังอยู่ แต่ไม่ได้ import ใน main.py แล้ว (สามารถลบทีหลัง)
+- aiohttp ต้องมีใน requirements สำหรับ macro_xau economic calendar
+
+#### ทดสอบแล้ว
+- import test ทุก agent ผ่านหมด (python3 -c "import main" → OK)
+- BTC_TOTAL_WEIGHT = 14.0 ✅, XAU_TOTAL_WEIGHT = 12.5 ✅
+
+## ทำล่าสุดถึง (Phase 7)
 **11-Agent BTC+XAU System** — Rebuild จาก 7-agent ETH เป็น 11-agent BTC+XAU
 
 ### 11-Agent Architecture (2026-06-17)

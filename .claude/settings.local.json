@@ -17,7 +17,8 @@
       "Bash(git add *)",
       "Bash(git commit *)",
       "Bash(python -m unittest agents.smc_agent.tests.test_detectors -v)",
-      "Bash(brew install *)"
+      "Bash(brew install *)",
+      "Bash(python *)"
     ]
   }
 }

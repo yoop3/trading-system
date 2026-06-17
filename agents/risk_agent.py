@@ -246,9 +246,37 @@ class RiskAgent(BaseAgent):
         now = datetime.now(timezone.utc)
         asset_label = asset_symbol.split("/")[0]
 
-        # Check 1 — HOLD → ไม่ต้องทำอะไร
+        # Check 1 — HOLD → ตรวจ daily loss แล้ว return APPROVED (monitoring)
         if master_signal == "HOLD":
-            return self._veto(f"{asset_label}: HOLD signal")
+            try:
+                daily_pnl = await self.db.get_today_pnl()
+                trading_enabled = os.getenv("TRADING_ENABLED", "false").lower() == "true"
+                balance = await self.data_fetcher.get_balance()
+                total_balance = balance.get("total", 0)
+                if total_balance == 0 and not trading_enabled:
+                    total_balance = float(os.getenv("PAPER_BALANCE", "0"))
+                if total_balance > 0 and daily_pnl / total_balance < -self.MAX_DAILY_LOSS_PCT:
+                    return self._veto(
+                        f"{asset_label}: ❌ Daily loss limit {daily_pnl/total_balance:.1%}"
+                    )
+                n_pos = len(current_positions)
+                mon_reason = (
+                    f"{asset_label}: monitoring | {n_pos}/{self.MAX_OPEN_POSITIONS} pos "
+                    f"| daily PnL {daily_pnl:+.1f} USDT"
+                )
+            except Exception as e:
+                logger.warning(f"[risk] HOLD monitor error ({asset_label}): {e}")
+                mon_reason = f"{asset_label}: monitoring (ไม่มี trade signal)"
+            return AgentSignal(
+                agent_name=self.name,
+                signal="APPROVED",
+                score=0.0,
+                confidence=1.0,
+                reason=mon_reason,
+                timestamp=now.isoformat(),
+                next_action="รอ Master signal",
+                veto=True,  # ป้องกัน execution โดยอัตโนมัติ
+            )
 
         # Check 2 — Confidence < 60%
         if master_confidence < self.MIN_CONFIDENCE:
