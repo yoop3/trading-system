@@ -1,6 +1,6 @@
 """
-news_agent.py — วิเคราะห์ข่าว ETH จาก RSS feeds ด้วย Claude Haiku
-อัปเดตทุก 30 นาที | ดึง 3 แหล่ง: CoinTelegraph, CoinDesk, Reddit r/ethereum
+news_agent.py — วิเคราะห์ข่าว BTC/crypto จาก RSS feeds ด้วย Claude Haiku
+อัปเดตทุก 30 นาที | ดึง 3 แหล่ง: CoinTelegraph, CoinDesk, Reddit r/Bitcoin
 ใช้ httpx + xml.etree.ElementTree (built-in ไม่ต้องติดตั้งเพิ่ม)
 """
 
@@ -18,7 +18,7 @@ from agents.base_agent import BaseAgent, AgentSignal
 RSS_SOURCES = [
     ("CoinTelegraph", "https://cointelegraph.com/rss"),
     ("CoinDesk",      "https://www.coindesk.com/arc/outboundfeeds/rss/"),
-    ("Reddit ETH",    "https://reddit.com/r/ethereum/.rss"),
+    ("Reddit BTC",    "https://reddit.com/r/Bitcoin/.rss"),
 ]
 
 # namespace ที่ Reddit Atom feed ใช้
@@ -105,7 +105,7 @@ class NewsAgent(BaseAgent):
             client = anthropic.AsyncAnthropic(api_key=self.anthropic_key)
 
             headlines_text = "\n".join(f"- {h}" for h in headlines)
-            prompt = f"""วิเคราะห์ข่าว crypto ต่อไปนี้ว่า sentiment ต่อ ETH เป็นบวกหรือลบ:
+            prompt = f"""วิเคราะห์ข่าว crypto ต่อไปนี้ว่า sentiment ต่อ BTC/ตลาด crypto โดยรวม เป็นบวกหรือลบ:
 
 {headlines_text}
 

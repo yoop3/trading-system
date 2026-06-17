@@ -26,7 +26,9 @@ class DashboardServer:
         self._connections: list[WebSocket] = []
         self._state: dict[str, Any] = {
             "agents": {},
-            "master_decision": None,
+            "master_btc_decision": None,
+            "master_xau_decision": None,
+            "master_decision": None,  # legacy compat
             "balance": {"total": 0, "free": 0, "used": 0},
             "position": None,
             "trades": [],
@@ -59,22 +61,45 @@ class DashboardServer:
         }
 
     def update_master(self, decision) -> None:
-        """อัปเดต master decision state และ agent card"""
-        self._state["master_decision"] = {
+        """legacy method — เรียก update_master_btc"""
+        self.update_master_btc(decision)
+
+    def update_master_btc(self, decision) -> None:
+        """อัปเดต BTC Master decision"""
+        self._state["master_btc_decision"] = {
             "signal": decision.signal,
             "total_score": decision.total_score,
             "reasoning": decision.reasoning,
             "used_llm": decision.used_llm,
             "timestamp": decision.timestamp,
         }
-        # แสดง master ใน agent grid ด้วย
-        self._state["agents"]["master"] = {
-            "name": "master",
+        self._state["agents"]["master_btc"] = {
+            "name": "master_btc",
             "signal": decision.signal,
             "score": round(decision.total_score, 2),
-            "confidence": min(abs(decision.total_score) / 9.5, 1.0),
+            "confidence": min(abs(decision.total_score) / 14.0, 1.0),
             "reason": decision.reasoning,
-            "next_action": "Claude LLM ช่วยตัดสิน" if decision.used_llm else "Rule-based scoring",
+            "next_action": "Claude LLM ช่วยตัดสิน" if decision.used_llm else "Rule-based BTC scoring",
+            "status": "DONE",
+            "timestamp": decision.timestamp,
+        }
+
+    def update_master_xau(self, decision) -> None:
+        """อัปเดต XAU Master decision"""
+        self._state["master_xau_decision"] = {
+            "signal": decision.signal,
+            "total_score": decision.total_score,
+            "reasoning": decision.reasoning,
+            "used_llm": decision.used_llm,
+            "timestamp": decision.timestamp,
+        }
+        self._state["agents"]["master_xau"] = {
+            "name": "master_xau",
+            "signal": decision.signal,
+            "score": round(decision.total_score, 2),
+            "confidence": min(abs(decision.total_score) / 5.0, 1.0),
+            "reason": decision.reasoning,
+            "next_action": "Rule-based XAU scoring",
             "status": "DONE",
             "timestamp": decision.timestamp,
         }

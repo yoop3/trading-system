@@ -1,7 +1,8 @@
 """
-main.py — Orchestrator หลักของ AI Trading System (7 Agents)
-รัน: python main.py
-เปิด dashboard: http://localhost:8000
+main.py — Orchestrator หลักของ AI Trading System (11 Agents)
+BTC: 7 agents consensus (technical_btc, whale_btc, smc_btc, macro, wyckoff, sentiment, news)
+XAU: 2 agents consensus (smc_xau, technical_xau) + per-asset risk
+รัน: python main.py | เปิด dashboard: http://localhost:8000
 """
 
 import asyncio
@@ -18,21 +19,21 @@ from agents.master_agent import MasterAgent
 from agents.news_agent import NewsAgent
 from agents.risk_agent import RiskAgent
 from agents.sentiment_agent import SentimentAgent
-from agents.smc_agent.config import BTC_CONFIG, SMC_CONFIG
-from agents.smc_agent.smc_agent import SMCAgent
-from agents.technical_agent import TechnicalAgent
-from agents.whale_agent import WhaleAgent
+from agents.smc_btc_agent import SMCBTCAgent
+from agents.smc_xau_agent import SMCXAUAgent
+from agents.technical_btc_agent import TechnicalBTCAgent
+from agents.technical_xau_agent import TechnicalXAUAgent
+from agents.whale_btc_agent import WhaleBTCAgent
+from agents.wyckoff_agent import WyckoffAgent
 from core.data_fetcher import DataFetcher
 from core.database import Database
 from core.executor import Executor
 from core.position_monitor import PositionMonitor
-from core.trade_grader import grade_trade
 from dashboard.server import DashboardServer
 
 
-# ---------- Config ----------
 def setup_logging():
-    """ตั้งค่า loguru สำหรับ log ไฟล์และ console"""
+    """ตั้งค่า loguru"""
     log_level = os.getenv("LOG_LEVEL", "INFO")
     logger.remove()
     logger.add(sys.stderr, level=log_level, colorize=True,
@@ -41,184 +42,229 @@ def setup_logging():
                retention="7 days", level="DEBUG", encoding="utf-8")
 
 
-# ---------- Trading Loop ----------
 class TradingSystem:
     """
-    Orchestrator ที่รัน agent ทั้งหมดตาม schedule
-    และส่ง state ไปยัง dashboard
+    Orchestrator รัน 11 agents ตาม schedule:
+    BTC agents → BTC Master decision → Risk → Execute
+    XAU agents → XAU Master decision → Risk → Execute
     """
+
+    BTC_SYMBOL = "BTC/USDT:USDT"
+    XAU_SYMBOL = "XAU/USDT:USDT"
 
     def __init__(self, data_fetcher: DataFetcher, db: Database, dashboard: DashboardServer):
         self.df = data_fetcher
         self.db = db
         self.dashboard = dashboard
 
-        # สร้าง agents ทั้งหมด
-        self.technical = TechnicalAgent(data_fetcher, db)
-        self.macro = MacroAgent(data_fetcher, db)
-        self.sentiment = SentimentAgent(data_fetcher, db)
-        self.news = NewsAgent(data_fetcher, db)
-        self.whale = WhaleAgent(data_fetcher, db)
-        self.risk = RiskAgent(data_fetcher, db)
-        self.master = MasterAgent(data_fetcher, db, risk_agent=self.risk)
-        self.smc_xau = SMCAgent(data_fetcher, db, config=SMC_CONFIG, name="smc_xau")
-        self.smc_btc = SMCAgent(data_fetcher, db, config=BTC_CONFIG, name="smc_btc")
+        # --- BTC agents (7) ---
+        self.technical_btc = TechnicalBTCAgent(data_fetcher, db)
+        self.whale_btc     = WhaleBTCAgent(data_fetcher, db)
+        self.smc_btc       = SMCBTCAgent(data_fetcher, db)
+        self.macro         = MacroAgent(data_fetcher, db)
+        self.wyckoff       = WyckoffAgent(data_fetcher, db)
+        self.sentiment     = SentimentAgent(data_fetcher, db)
+        self.news          = NewsAgent(data_fetcher, db)
+
+        # --- XAU agents (2) ---
+        self.smc_xau       = SMCXAUAgent(data_fetcher, db)
+        self.technical_xau = TechnicalXAUAgent(data_fetcher, db)
+
+        # --- Control ---
+        self.risk    = RiskAgent(data_fetcher, db)
+        self.master  = MasterAgent(data_fetcher, db, risk_agent=self.risk)
         self.executor = Executor(data_fetcher, db)
         self.position_monitor = PositionMonitor(data_fetcher, db)
 
-        # เก็บ signals ล่าสุดของแต่ละ agent
-        self._signals: dict = {}
+        # BTC signals dict — รับจากทุก BTC agents
+        self._btc_signals: dict = {}
+        # XAU signals dict
+        self._xau_signals: dict = {}
 
-        # ตั้ง interval ของแต่ละ agent (วินาที)
+        # Schedule (วินาที)
         self._intervals = {
-            "technical": 5 * 60,    # ทุก 5 นาที
-            "sentiment": 15 * 60,   # ทุก 15 นาที
-            "whale":     15 * 60,   # ทุก 15 นาที
-            "news":      30 * 60,   # ทุก 30 นาที
-            "macro":     4 * 60 * 60,  # ทุก 4 ชั่วโมง
-            "smc_xau":   5 * 60,    # ทุก 5 นาที (sync กับ LTF 5m candle)
-            "smc_btc":   5 * 60,    # ทุก 5 นาที (sync กับ LTF 5m candle)
+            "technical_btc": 5  * 60,
+            "whale_btc":     15 * 60,
+            "smc_btc":       5  * 60,
+            "macro":         4  * 60 * 60,
+            "wyckoff":       4  * 60 * 60,
+            "sentiment":     15 * 60,
+            "news":          30 * 60,
+            "smc_xau":       5  * 60,
+            "technical_xau": 5  * 60,
         }
-        # ตั้งให้รอบแรกรันทันที
         self._next_run = {k: 0.0 for k in self._intervals}
 
-    async def _run_agent_if_due(self, name: str, agent) -> bool:
-        """รัน agent ถ้าถึงเวลาแล้ว คืน True ถ้ารัน"""
+    # ──────────────────────────────────────────────
+    # BTC pipeline
+    # ──────────────────────────────────────────────
+
+    async def _run_btc_agent(self, name: str, agent) -> bool:
+        """รัน BTC agent ถ้าถึงเวลา → เก็บ signal → dashboard update"""
         now = asyncio.get_event_loop().time()
-        if now >= self._next_run[name]:
-            self.dashboard.update_agent_status(name, "ANALYZING")
-            signal = await agent.run()
-            self._signals[name] = signal
-            self.dashboard.update_agent(name, signal)
-            self._next_run[name] = now + self._intervals[name]
-            return True
-        return False
+        if now < self._next_run[name]:
+            return False
+        self.dashboard.update_agent_status(name, "ANALYZING")
+        signal = await agent.run()
+        self._btc_signals[name] = signal
+        self.dashboard.update_agent(name, signal)
+        self._next_run[name] = now + self._intervals[name]
+        return True
 
-    async def _run_master(self):
-        """รัน Master Agent หลัง technical agent ทุกรอบ"""
-        if not self._signals:
+    async def _run_btc_master(self):
+        """Master BTC decision → Risk → Execute"""
+        if not self._btc_signals:
             return
 
-        decision = await self.master.decide(self._signals)
-        self.dashboard.update_master(decision)
+        btc_decision = await self.master.decide_btc(self._btc_signals)
+        self.dashboard.update_master_btc(btc_decision)
 
-        # ถ้า HOLD → ไม่ต้องทำอะไร
-        if decision.signal == "HOLD":
-            logger.info("[main] Master: HOLD — ไม่เทรด")
+        if btc_decision.signal == "HOLD":
+            logger.info("[main] BTC Master: HOLD — ไม่เทรด")
             return
 
-        # ผ่าน Risk Agent ก่อนเสมอ
         master_conf = max(
-            (s.confidence for s in self._signals.values()), default=0.0
+            (s.confidence for s in self._btc_signals.values()), default=0.0
         )
+        current_positions = await self.db.get_open_trades(asset=self.BTC_SYMBOL)
         self.dashboard.update_agent_status("risk", "ANALYZING")
-        risk_signal = await self.risk.check(
-            master_signal=decision.signal,
+        risk_signal = await self.risk.check_asset(
+            asset_symbol=self.BTC_SYMBOL,
+            master_signal=btc_decision.signal,
             master_confidence=master_conf,
-            master_score=decision.total_score,
+            master_score=btc_decision.total_score,
+            current_positions=current_positions,
+            is_xau=False,
         )
         self.dashboard.update_agent("risk", risk_signal)
 
         if risk_signal.veto:
-            logger.warning(f"[main] Risk VETO: {risk_signal.reason}")
+            logger.warning(f"[main] BTC Risk VETO: {risk_signal.reason}")
             return
 
-        # Execute trade
-        size = risk_signal.recommended_size or 0.001
+        size     = risk_signal.recommended_size or 0.001
         leverage = risk_signal.recommended_leverage or 3
 
         try:
-            df_1h = await self.df.get_ohlcv("1h", limit=50)
+            df_1h = await self.df.get_ohlcv("1h", limit=50, symbol=self.BTC_SYMBOL)
             from core.indicators import Indicators
             ind = Indicators()
             df_1h = ind.calculate_all(df_1h)
             latest = ind.get_latest(df_1h)
             price = float(latest.get("close", 0))
-            atr = float(latest.get("ATR_14", price * 0.01))
+            atr   = float(latest.get("ATR_14", price * 0.01))
         except Exception as e:
-            logger.error(f"[main] ATR fetch for TP/SL failed: {e}")
+            logger.error(f"[main] BTC ATR fetch failed: {e}")
             return
 
-        # ให้เกรด A/B/C/D กับ trade นี้ (ดูเกณฑ์ใน docs/TRADE_GRADING.md)
-        atr_ratio = atr / price if price > 0 else 0.0
-        grade, grade_breakdown = grade_trade(
-            weight_ratio=decision.weight_ratio,
-            total_score=decision.total_score,
-            confidence=master_conf,
-            atr_ratio=atr_ratio,
-        )
-        logger.info(f"[main] Trade grade: {grade} ({grade_breakdown})")
-
-        if decision.signal == "LONG":
+        if btc_decision.signal == "LONG":
             tp, sl = self.executor.calculate_tp_sl("LONG", price, atr)
             result = await self.executor.open_long(
-                size, leverage, tp, sl, reason=decision.reasoning, grade=grade, grade_detail=grade_breakdown
+                size, leverage, tp, sl,
+                reason=btc_decision.reasoning, asset=self.BTC_SYMBOL,
             )
         else:
             tp, sl = self.executor.calculate_tp_sl("SHORT", price, atr)
             result = await self.executor.open_short(
-                size, leverage, tp, sl, reason=decision.reasoning, grade=grade, grade_detail=grade_breakdown
+                size, leverage, tp, sl,
+                reason=btc_decision.reasoning, asset=self.BTC_SYMBOL,
             )
 
         if result:
             logger.success(
-                f"[main] Trade executed: {decision.signal} "
-                f"size={size} ETH @ {price} | TP={tp} SL={sl}"
+                f"[main] BTC trade: {btc_decision.signal} size={size} @ {price:.0f} "
+                f"TP={tp:.0f} SL={sl:.0f}"
             )
 
-    async def _run_smc_if_due(self, key: str, agent: SMCAgent, cfg: dict):
-        """
-        รัน SMC Agent (key = "smc_xau"/"smc_btc") ตาม schedule แยกจาก consensus หลัก (ETHUSDT)
-        ไม่เก็บเข้า self._signals เพราะเป็นคนละ asset กับ Master Agent
-        """
+    # ──────────────────────────────────────────────
+    # XAU pipeline
+    # ──────────────────────────────────────────────
+
+    async def _run_xau_agent(self, name: str, agent) -> bool:
+        """รัน XAU agent ถ้าถึงเวลา → เก็บ signal → dashboard update"""
         now = asyncio.get_event_loop().time()
-        if now < self._next_run[key]:
-            return
-
-        self.dashboard.update_agent_status(key, "ANALYZING")
+        if now < self._next_run[name]:
+            return False
+        self.dashboard.update_agent_status(name, "ANALYZING")
         signal = await agent.run()
-        self.dashboard.update_agent(key, signal)
-        self._next_run[key] = now + self._intervals[key]
+        self._xau_signals[name] = signal
+        self.dashboard.update_agent(name, signal)
+        self._next_run[name] = now + self._intervals[name]
+        return True
 
-        await self._handle_smc_signal(agent, cfg)
-
-    async def _handle_smc_signal(self, agent: SMCAgent, cfg: dict):
-        """ส่งผลลัพธ์ SMC Agent ผ่าน Risk Agent แล้ว execute ถ้า APPROVED"""
-        smc_output = agent.last_smc_output
-        if not smc_output:
+    async def _run_xau_master(self):
+        """Master XAU decision → Risk → Execute"""
+        if not self._xau_signals:
             return
 
-        current_positions = await self.db.get_open_trades(asset=cfg["symbol"])
-        risk_signal = await self.risk.check_smc(smc_output, current_positions)
+        xau_decision = await self.master.decide_xau(self._xau_signals)
+        self.dashboard.update_master_xau(xau_decision)
+
+        if xau_decision.signal == "HOLD":
+            logger.info("[main] XAU Master: HOLD — ไม่เทรด")
+            return
+
+        master_conf = max(
+            (s.confidence for s in self._xau_signals.values()), default=0.0
+        )
+        current_positions = await self.db.get_open_trades(asset=self.XAU_SYMBOL)
+        risk_signal = await self.risk.check_asset(
+            asset_symbol=self.XAU_SYMBOL,
+            master_signal=xau_decision.signal,
+            master_confidence=master_conf,
+            master_score=xau_decision.total_score,
+            current_positions=current_positions,
+            is_xau=True,
+        )
 
         if risk_signal.veto:
-            logger.debug(f"[main] SMC [{cfg['asset']}] risk: {risk_signal.reason}")
+            logger.warning(f"[main] XAU Risk VETO: {risk_signal.reason}")
             return
 
-        levels = smc_output["levels"]
-        side = smc_output["signal"]
-        size = risk_signal.recommended_size or 0.001
+        # SMC XAU levels มีอยู่แล้ว — ใช้ถ้ามี ไม่งั้นใช้ ATR
+        smc_out = self.smc_xau.last_smc_output
+        if smc_out and smc_out.get("levels"):
+            levels = smc_out["levels"]
+            tp = levels["tp1"]
+            sl = levels["sl"]
+        else:
+            try:
+                df_1h = await self.df.get_ohlcv("1h", limit=50, symbol=self.XAU_SYMBOL)
+                from core.indicators import Indicators
+                ind = Indicators()
+                df_1h = ind.calculate_all(df_1h)
+                latest = ind.get_latest(df_1h)
+                price = float(latest.get("close", 0))
+                atr   = float(latest.get("ATR_14", price * 0.005))
+                tp, sl = self.executor.calculate_tp_sl(xau_decision.signal, price, atr)
+            except Exception as e:
+                logger.error(f"[main] XAU ATR fetch failed: {e}")
+                return
+
+        size     = risk_signal.recommended_size or 0.001
         leverage = risk_signal.recommended_leverage or 1
 
-        if side == "LONG":
+        if xau_decision.signal == "LONG":
             result = await self.executor.open_long(
-                size, leverage, levels["tp1"], levels["sl"],
-                reason=smc_output["reason"], asset=cfg["symbol"],
+                size, leverage, tp, sl,
+                reason=xau_decision.reasoning, asset=self.XAU_SYMBOL,
             )
         else:
             result = await self.executor.open_short(
-                size, leverage, levels["tp1"], levels["sl"],
-                reason=smc_output["reason"], asset=cfg["symbol"],
+                size, leverage, tp, sl,
+                reason=xau_decision.reasoning, asset=self.XAU_SYMBOL,
             )
 
         if result:
             logger.success(
-                f"[main] SMC trade executed: {side} ({cfg['asset']}) "
-                f"size={size} leverage={leverage}x | levels={levels}"
+                f"[main] XAU trade: {xau_decision.signal} size={size} | TP={tp} SL={sl}"
             )
 
+    # ──────────────────────────────────────────────
+    # Helpers
+    # ──────────────────────────────────────────────
+
     async def _record_balance(self):
-        """บันทึก balance snapshot ทุกชั่วโมง"""
         try:
             balance = await self.df.get_balance()
             positions = await self.df.get_open_positions()
@@ -228,36 +274,41 @@ class TradingSystem:
         except Exception as e:
             logger.error(f"[main] balance snapshot error: {e}")
 
+    # ──────────────────────────────────────────────
+    # Main Loop
+    # ──────────────────────────────────────────────
+
     async def run_loop(self):
-        """
-        Main trading loop รันตลอด
-        Technical agent รันทุก 5 นาที → trigger master decision
-        """
-        logger.info("Trading loop started")
+        logger.info("Trading loop started (11-agent BTC+XAU system)")
         last_balance_snapshot = 0.0
-        balance_interval = 60 * 60  # ทุก 1 ชั่วโมง
+        balance_interval = 60 * 60
 
         while True:
             try:
                 now = asyncio.get_event_loop().time()
 
-                # ตรวจ paper trades ว่าโดน TP/SL ไหม (ทุก loop = ทุก 30 วินาที)
+                # ตรวจ paper trades TP/SL
                 await self.position_monitor.check()
 
-                # รัน agent ตาม schedule
-                ran_technical = await self._run_agent_if_due("technical", self.technical)
-                await self._run_agent_if_due("sentiment", self.sentiment)
-                await self._run_agent_if_due("whale", self.whale)
-                await self._run_agent_if_due("news", self.news)
-                await self._run_agent_if_due("macro", self.macro)
+                # --- BTC agents ---
+                ran_btc_tech = await self._run_btc_agent("technical_btc", self.technical_btc)
+                await self._run_btc_agent("whale_btc",  self.whale_btc)
+                await self._run_btc_agent("smc_btc",    self.smc_btc)
+                await self._run_btc_agent("macro",      self.macro)
+                await self._run_btc_agent("wyckoff",    self.wyckoff)
+                await self._run_btc_agent("sentiment",  self.sentiment)
+                await self._run_btc_agent("news",       self.news)
 
-                # Master รันหลัง technical เสมอ
-                if ran_technical:
-                    await self._run_master()
+                # BTC Master รันหลัง technical_btc เสมอ
+                if ran_btc_tech:
+                    await self._run_btc_master()
 
-                # SMC Agents (XAUUSDT, BTCUSDT) — รันแยก schedule ของตัวเอง
-                await self._run_smc_if_due("smc_xau", self.smc_xau, SMC_CONFIG)
-                await self._run_smc_if_due("smc_btc", self.smc_btc, BTC_CONFIG)
+                # --- XAU agents ---
+                ran_xau_smc  = await self._run_xau_agent("smc_xau",       self.smc_xau)
+                ran_xau_tech = await self._run_xau_agent("technical_xau", self.technical_xau)
+
+                if ran_xau_smc or ran_xau_tech:
+                    await self._run_xau_master()
 
                 # Balance snapshot ทุกชั่วโมง
                 if now - last_balance_snapshot >= balance_interval:
@@ -267,53 +318,44 @@ class TradingSystem:
             except Exception as e:
                 logger.error(f"[main] trading loop error: {e}")
 
-            # รอ 30 วินาทีก่อนเช็คอีกครั้ง
             await asyncio.sleep(30)
 
 
-# ---------- Entry Point ----------
-async def main():
-    # โหลด .env
-    load_dotenv()
+# ──────────────────────────────────────────────
+# Entry Point
+# ──────────────────────────────────────────────
 
-    # สร้าง logs directory
+async def main():
+    load_dotenv()
     os.makedirs("logs", exist_ok=True)
     setup_logging()
 
     logger.info("=" * 60)
-    logger.info("🚀 AI Trading System Starting (7 Agents)")
-    logger.info("📍 Symbol: " + os.getenv("TRADING_SYMBOL", "ETH/USDT:USDT"))
-    logger.info("⚠️  TESTNET MODE — ไม่ใช้เงินจริง")
+    logger.info("🚀 AI Trading System Starting (11 Agents — BTC+XAU)")
+    logger.info("📍 BTC/USDT:USDT + XAU/USDT:USDT")
+    logger.info("⚠️  TESTNET/PAPER MODE — ไม่ใช้เงินจริง")
     logger.info("=" * 60)
 
-    # เชื่อม Binance Testnet
     data_fetcher = DataFetcher()
     logger.info("DataFetcher initialized")
 
-    # สร้าง SQLite database
     db = Database()
     await db.connect()
     logger.info("Database connected")
 
-    # สร้าง dashboard server
     dashboard = DashboardServer()
     dashboard.set_dependencies(db, data_fetcher)
 
-    # สร้าง trading system
     trading = TradingSystem(data_fetcher, db, dashboard)
 
-    # Port สำหรับ dashboard
     port = int(os.getenv("DASHBOARD_PORT", "8000"))
-
     logger.info(f"📊 Dashboard: http://localhost:{port}")
-    logger.info("Starting all services...")
 
-    # รัน trading loop, dashboard broadcast loop, และ uvicorn พร้อมกัน
     config = uvicorn.Config(
         dashboard.app,
         host="0.0.0.0",
         port=port,
-        log_level="warning",  # ลด noise จาก uvicorn
+        log_level="warning",
     )
     server = uvicorn.Server(config)
 
@@ -325,9 +367,9 @@ async def main():
 
 
 if __name__ == "__main__":
-    print("🚀 AI Trading System Starting...")
+    print("🚀 AI Trading System Starting (11 Agents — BTC+XAU)")
     print("📊 Dashboard: http://localhost:8000")
-    print("⚠️  TESTNET MODE — ไม่ใช้เงินจริง")
+    print("⚠️  PAPER MODE — ไม่ใช้เงินจริง")
     print("")
     try:
         asyncio.run(main())

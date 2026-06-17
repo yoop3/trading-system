@@ -7,9 +7,45 @@
 - [x] Phase 4: Dashboard ✅
 - [x] Phase 5: Integration & Main ✅
 - [x] Phase 6: Pre-deployment (DigitalOcean ready) ✅
+- [x] Phase 7: **11-Agent BTC+XAU Rebuild** ✅ (2026-06-17)
 
 ## ทำล่าสุดถึง
-**DEPLOYMENT READY** — ระบบพร้อม paper trade 2 สัปดาห์ และ deploy บน DigitalOcean
+**11-Agent BTC+XAU System** — Rebuild จาก 7-agent ETH เป็น 11-agent BTC+XAU
+
+### 11-Agent Architecture (2026-06-17)
+
+#### BTC Agents (7 — consensus ตัดสินใจ BTC trade)
+- `agents/macro_agent.py` — **Updated**: ใช้ BTC/USDT:USDT data, เพิ่ม Rule 4 (monthly trend), fix confidence = min(abs(score)/9.0, 1.0)
+- `agents/news_agent.py` — **Updated**: เปลี่ยน Reddit r/ethereum → r/Bitcoin, prompt ปรับ ETH→BTC
+- `agents/sentiment_agent.py` — **Updated**: ใช้ BTC/USDT:USDT สำหรับ funding rate + OI
+- `agents/wyckoff_agent.py` — **NEW**: BTC 1D + Volume, ตรวจ Wyckoff events (Spring/SOS/SC/BC/SOW/UTAD) → score -3..+3
+- `agents/technical_btc_agent.py` — **NEW**: BTC 1H/15m/5m, EMA20/50, RSI14, MACD, BB, Volume → score -9..+9
+- `agents/whale_btc_agent.py` — **NEW**: BTC order book 20 levels, bid/ask ratio, large trades >$500K → score -4..+4
+- `agents/smc_btc_agent.py` — **NEW**: Top-down BTC SMC (4H FVG + 1D CHoCH/BOS → 5m stop hunt/displacement/OB) → score -3..+3
+
+#### XAU Agents (2 — consensus ตัดสินใจ XAU trade)
+- `agents/smc_xau_agent.py` — **NEW** (replaces old smc_agent.py wrapper): 1H FVG + round number liquidity ($50 intervals) + optional news avoidance (XAU_NEWS_AVOIDANCE=true) → score -3..+3
+- `agents/technical_xau_agent.py` — **NEW**: XAU 1H/15m/5m เหมือน BTC technical + ATR volatility check (>2x avg → conf 50%) → score -9..+9
+
+#### Control (2)
+- `agents/risk_agent.py` — **Updated**: เพิ่ม `check_asset(asset_symbol, signal, conf, score, positions, is_xau)` method — per-asset position limit, XAU news VETO (is_xau=True + XAU_NEWS_AVOIDANCE=true)
+- `agents/master_agent.py` — **Rebuilt**: `decide_btc(signals)` + `decide_xau(signals)` แยก threshold (BTC ±6 of 14.0, XAU ±3 of 5.0), BTC ใช้ LLM grey zone, XAU HOLD if grey zone
+
+#### Infrastructure
+- `core/data_fetcher.py` — **Updated**: เพิ่ม `symbol` param ให้ `get_order_book`, `get_recent_trades`, `get_funding_rate`, `get_open_interest`
+- `main.py` — **Rebuilt**: `TradingSystem` มี `_btc_signals`/`_xau_signals` แยก, `_run_btc_master()` + `_run_xau_master()` แยก pipeline
+- `dashboard/server.py` — **Updated**: เพิ่ม `update_master_btc()` + `update_master_xau()`, state มี `master_btc_decision`/`master_xau_decision`
+- `dashboard/index.html` — **Updated**: title/header ปรับ, AGENT_ORDER 12 entries (incl. master_btc/master_xau), dual master decision cards, agent icons/names ทุกตัว
+
+#### ทดสอบแล้ว
+- `python3 -m pytest agents/smc_agent/tests/ -q` → 32 passed
+- `python3 -m pytest tests/ -q` → 8 passed
+- Import test ทุก agent ผ่านหมด (wyckoff, technical_btc, whale_btc, smc_btc, smc_xau, technical_xau, master, risk)
+
+#### Note: Old files ยังอยู่ (ไม่ได้ลบ)
+- `agents/technical_agent.py`, `agents/whale_agent.py` — ETH agents เดิม ไม่ได้ใช้ใน main.py แล้ว (สามารถลบทีหลัง)
+- `agents/smc_agent/` directory — detectors ยังคงอยู่และ import โดย smc_btc_agent + smc_xau_agent
+- `agents/smc_agent/smc_agent.py`, `agents/smc_agent/config.py` — old wrapper ยังอยู่ แต่ไม่ได้ import ใน main.py แล้ว
 
 ### Trade Grading (เพิ่มใหม่)
 - `docs/TRADE_GRADING.md` — เกณฑ์ให้เกรด A/B/C/D (consensus weight + signal strength + confidence + volatility modifier)

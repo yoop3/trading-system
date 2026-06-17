@@ -130,55 +130,59 @@ class DataFetcher:
             logger.error(f"get_open_positions error: {e}")
             return []
 
-    async def get_funding_rate(self) -> float:
-        """
-        ดึง funding rate ปัจจุบัน (สำหรับ Sentiment Agent)
-        ค่าบวก = longs จ่าย shorts, ค่าลบ = shorts จ่าย longs
-        """
-        try:
-            # ดึง funding rate จาก exchange info
-            funding = await self.exchange.fetch_funding_rate(self.symbol)
-            rate = float(funding.get("fundingRate", 0) or 0)
-            logger.debug(f"Funding rate: {rate}")
-            return rate
-        except Exception as e:
-            logger.error(f"get_funding_rate error: {e}")
-            return 0.0
-
-    async def get_open_interest(self) -> float:
-        """
-        ดึง open interest รวม (สำหรับ Sentiment Agent)
-        คืนค่าเป็น float (จำนวนสัญญา)
-        """
-        try:
-            oi = await self.exchange.fetch_open_interest(self.symbol)
-            # ccxt คืน openInterestAmount ไม่ใช่ openInterest
-            value = float(oi.get("openInterestAmount") or oi.get("openInterest") or 0)
-            logger.debug(f"Open interest: {value}")
-            return value
-        except Exception as e:
-            logger.error(f"get_open_interest error: {e}")
-            return 0.0
-
-    async def get_order_book(self, limit: int = 20) -> dict:
+    async def get_order_book(self, limit: int = 20, symbol: Optional[str] = None) -> dict:
         """
         ดึง order book depth สำหรับ Whale Agent
         คืน {'bids': [...], 'asks': [...]}
+        symbol: ระบุเพื่อดึงข้อมูล asset อื่น (default = self.symbol)
         """
+        symbol = symbol or self.symbol
         try:
-            book = await self.exchange.fetch_order_book(self.symbol, limit=limit)
+            book = await self.exchange.fetch_order_book(symbol, limit=limit)
             return book
         except Exception as e:
-            logger.error(f"get_order_book error: {e}")
+            logger.error(f"get_order_book error ({symbol}): {e}")
             return {"bids": [], "asks": []}
 
-    async def get_recent_trades(self, limit: int = 100) -> list:
+    async def get_recent_trades(self, limit: int = 100, symbol: Optional[str] = None) -> list:
         """
         ดึง recent trades สำหรับ Whale Agent วิเคราะห์ large orders
+        symbol: ระบุเพื่อดึงข้อมูล asset อื่น (default = self.symbol)
         """
+        symbol = symbol or self.symbol
         try:
-            trades = await self.exchange.fetch_trades(self.symbol, limit=limit)
+            trades = await self.exchange.fetch_trades(symbol, limit=limit)
             return trades
         except Exception as e:
-            logger.error(f"get_recent_trades error: {e}")
+            logger.error(f"get_recent_trades error ({symbol}): {e}")
             return []
+
+    async def get_funding_rate(self, symbol: Optional[str] = None) -> float:
+        """
+        ดึง funding rate ปัจจุบัน (สำหรับ Sentiment Agent)
+        symbol: ระบุเพื่อดึงข้อมูล asset อื่น (default = self.symbol)
+        """
+        symbol = symbol or self.symbol
+        try:
+            funding = await self.exchange.fetch_funding_rate(symbol)
+            rate = float(funding.get("fundingRate", 0) or 0)
+            logger.debug(f"Funding rate ({symbol}): {rate}")
+            return rate
+        except Exception as e:
+            logger.error(f"get_funding_rate error ({symbol}): {e}")
+            return 0.0
+
+    async def get_open_interest(self, symbol: Optional[str] = None) -> float:
+        """
+        ดึง open interest รวม (สำหรับ Sentiment Agent)
+        symbol: ระบุเพื่อดึงข้อมูล asset อื่น (default = self.symbol)
+        """
+        symbol = symbol or self.symbol
+        try:
+            oi = await self.exchange.fetch_open_interest(symbol)
+            value = float(oi.get("openInterestAmount") or oi.get("openInterest") or 0)
+            logger.debug(f"Open interest ({symbol}): {value}")
+            return value
+        except Exception as e:
+            logger.error(f"get_open_interest error ({symbol}): {e}")
+            return 0.0

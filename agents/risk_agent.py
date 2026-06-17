@@ -1,6 +1,8 @@
 """
 risk_agent.py — Risk Manager ที่มีสิทธิ์ VETO ทุก trade
 รันทุกครั้งก่อน execute | ตรวจ daily loss, positions, position size
+Per-asset: max 1 pos/asset, daily loss -5%, confidence<60% VETO
+XAU: VETO เพิ่มเติมถ้าอยู่ใกล้ major US news window
 """
 
 import os
@@ -222,6 +224,104 @@ class RiskAgent(BaseAgent):
             reason=f"All risk checks passed | size={recommended_size} ETH",
             timestamp=datetime.now(timezone.utc).isoformat(),
             next_action="Execute trade",
+            veto=False,
+            recommended_size=recommended_size,
+            recommended_leverage=recommended_leverage,
+        )
+
+    async def check_asset(
+        self,
+        asset_symbol: str,
+        master_signal: str,
+        master_confidence: float,
+        master_score: float,
+        current_positions: list,
+        is_xau: bool = False,
+    ) -> AgentSignal:
+        """
+        ตรวจ risk สำหรับ Master Agent decision (BTC หรือ XAU)
+        asset_symbol: ccxt symbol เช่น "BTC/USDT:USDT"
+        is_xau: True → เพิ่ม XAU news VETO
+        """
+        now = datetime.now(timezone.utc)
+        asset_label = asset_symbol.split("/")[0]
+
+        # Check 1 — HOLD → ไม่ต้องทำอะไร
+        if master_signal == "HOLD":
+            return self._veto(f"{asset_label}: HOLD signal")
+
+        # Check 2 — Confidence < 60%
+        if master_confidence < self.MIN_CONFIDENCE:
+            return self._veto(
+                f"{asset_label}: confidence {master_confidence:.0%} < {self.MIN_CONFIDENCE:.0%}"
+            )
+
+        # Check 3 — Position limit per asset
+        if len(current_positions) >= self.MAX_OPEN_POSITIONS:
+            return self._veto(
+                f"{asset_label}: มี position เปิดอยู่แล้ว "
+                f"({len(current_positions)}/{self.MAX_OPEN_POSITIONS})"
+            )
+
+        # Check 4 — XAU news VETO
+        if is_xau and os.getenv("XAU_NEWS_AVOIDANCE", "false").lower() == "true":
+            news_times = [(8, 30), (13, 30), (14, 0), (18, 0)]
+            current_min = now.hour * 60 + now.minute
+            for h, m in news_times:
+                if abs(current_min - (h * 60 + m)) <= 30:
+                    return self._veto(f"XAU near major US news ({now.strftime('%H:%M')} UTC)")
+
+        # Check 5 — Daily loss limit (ทุก asset รวม)
+        try:
+            daily_pnl = await self.db.get_today_pnl()
+            trading_enabled = os.getenv("TRADING_ENABLED", "false").lower() == "true"
+            balance = await self.data_fetcher.get_balance()
+            total_balance = balance.get("total", 0)
+            if total_balance == 0 and not trading_enabled:
+                total_balance = float(os.getenv("PAPER_BALANCE", "0"))
+            if total_balance > 0 and daily_pnl / total_balance < -self.MAX_DAILY_LOSS_PCT:
+                return self._veto(
+                    f"{asset_label}: daily loss {daily_pnl/total_balance:.1%} "
+                    f"≤ -{self.MAX_DAILY_LOSS_PCT:.0%}"
+                )
+
+            # คำนวณ position size (2% risk, SL = ATR × 1.5)
+            recommended_size = 0.001
+            recommended_leverage = min(
+                self.MAX_LEVERAGE,
+                max(1, int(master_confidence * self.MAX_LEVERAGE)),
+            )
+            try:
+                df_1h = await self.data_fetcher.get_ohlcv("1h", limit=50, symbol=asset_symbol)
+                from core.indicators import Indicators
+                ind = Indicators()
+                df_1h = ind.calculate_all(df_1h)
+                latest = ind.get_latest(df_1h)
+                price_now = float(latest.get("close", 0))
+                atr = float(latest.get("ATR_14", 0))
+                if atr > 0 and total_balance > 0:
+                    sl_dist = atr * 1.5
+                    risk_amt = total_balance * self.RISK_PER_TRADE_PCT
+                    recommended_size = max(0.001, round(risk_amt / sl_dist, 4))
+            except Exception as e:
+                logger.warning(f"[risk] {asset_label} size calc failed: {e}")
+
+        except Exception as e:
+            logger.error(f"[risk] check_asset error ({asset_label}): {e}")
+            return self._veto(f"Risk check error: {str(e)[:80]}")
+
+        logger.info(
+            f"[risk] {asset_label} APPROVED — {master_signal} conf={master_confidence:.0%} "
+            f"size={recommended_size} leverage={recommended_leverage}x"
+        )
+        return AgentSignal(
+            agent_name=self.name,
+            signal="APPROVED",
+            score=float(master_score),
+            confidence=master_confidence,
+            reason=f"{asset_label} risk checks passed | {master_signal}",
+            timestamp=now.isoformat(),
+            next_action=f"Execute {master_signal} ({asset_label})",
             veto=False,
             recommended_size=recommended_size,
             recommended_leverage=recommended_leverage,

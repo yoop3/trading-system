@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI Trading Dashboard — ETHUSDT</title>
+  <title>AI Trading Dashboard — BTC+XAU (11 Agents)</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
     :root {
@@ -92,7 +92,7 @@
 <header class="header">
   <div>
     <span class="status-dot" id="conn-dot"></span>
-    <h1 style="display:inline">AI Trading System — ETH/USDT Futures (Testnet)</h1>
+    <h1 style="display:inline">AI Trading System — BTC+XAU (11 Agents)</h1>
   </div>
   <div id="countdown">กำลังโหลด...</div>
 </header>
@@ -160,26 +160,33 @@
     <!-- Agent cards injected by JS -->
   </div>
 
-  <!-- Section 3: Master Decision -->
-  <div class="grid-2">
+  <!-- Section 3: Master Decision (Dual BTC + XAU) -->
+  <div class="grid-2" style="margin-bottom:16px">
     <div class="card">
-      <div class="card-title">Master Decision</div>
-      <div class="master-score">Weighted Score: <strong id="master-score">—</strong></div>
-      <div class="master-signal" id="master-signal">—</div>
-      <div class="master-reasoning" id="master-reasoning">กำลังรอข้อมูล...</div>
+      <div class="card-title">₿ BTC Master Decision</div>
+      <div class="master-score">Score: <strong id="master-btc-score">—</strong> / 14.0</div>
+      <div class="master-signal" id="master-btc-signal">—</div>
+      <div class="master-reasoning" id="master-btc-reasoning">กำลังรอข้อมูล...</div>
     </div>
     <div class="card">
-      <div class="card-title">Trade History (20 รายการล่าสุด)</div>
-      <div style="overflow-x:auto">
-        <table class="table">
-          <thead><tr>
-            <th>เวลา</th><th>Asset</th><th>Side</th><th>Grade</th><th>Entry</th><th>Exit</th><th>PnL</th><th>Status</th><th>เหตุผล</th>
-          </tr></thead>
-          <tbody id="trades-tbody">
-            <tr><td colspan="9" style="text-align:center;color:var(--muted)">ยังไม่มี trade</td></tr>
-          </tbody>
-        </table>
-      </div>
+      <div class="card-title">🧠 XAU Master Decision</div>
+      <div class="master-score">Score: <strong id="master-xau-score">—</strong> / 5.0</div>
+      <div class="master-signal" id="master-xau-signal">—</div>
+      <div class="master-reasoning" id="master-xau-reasoning">กำลังรอข้อมูล...</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Trade History (20 รายการล่าสุด)</div>
+    <div style="overflow-x:auto">
+      <table class="table">
+        <thead><tr>
+          <th>เวลา</th><th>Asset</th><th>Side</th><th>Grade</th><th>Entry</th><th>Exit</th><th>PnL</th><th>Status</th><th>เหตุผล</th>
+        </tr></thead>
+        <tbody id="trades-tbody">
+          <tr><td colspan="9" style="text-align:center;color:var(--muted)">ยังไม่มี trade</td></tr>
+        </tbody>
+      </table>
     </div>
   </div>
 
@@ -187,15 +194,22 @@
 
 <script>
 const AGENT_ICONS = {
-  technical: '📊', macro: '🌐', sentiment: '😨',
-  news: '📰', whale: '🐋', risk: '🛡️', master: '🤖', smc_xau: '🧠', smc_btc: '₿'
+  technical_btc: '📊', whale_btc: '🐋', smc_btc: '₿',
+  macro: '🌐', wyckoff: '📈', sentiment: '😨', news: '📰',
+  smc_xau: '🧠', technical_xau: '🥇',
+  risk: '🛡️', master_btc: '🤖', master_xau: '✨',
 };
 const AGENT_NAMES = {
-  technical: 'Technical', macro: 'Macro', sentiment: 'Sentiment',
-  news: 'News', whale: 'Whale', risk: 'Risk', master: 'Master',
-  smc_xau: 'SMC (XAUUSDT)', smc_btc: 'SMC (BTCUSDT)'
+  technical_btc: 'Technical BTC', whale_btc: 'Whale BTC', smc_btc: 'SMC BTC',
+  macro: 'Macro (BTC)', wyckoff: 'Wyckoff', sentiment: 'Sentiment', news: 'News',
+  smc_xau: 'SMC XAU', technical_xau: 'Technical XAU',
+  risk: 'Risk', master_btc: 'Master BTC', master_xau: 'Master XAU',
 };
-const AGENT_ORDER = ['technical', 'macro', 'sentiment', 'news', 'whale', 'risk', 'master', 'smc_xau', 'smc_btc'];
+const AGENT_ORDER = [
+  'technical_btc', 'whale_btc', 'smc_btc', 'macro', 'wyckoff', 'sentiment', 'news',
+  'smc_xau', 'technical_xau',
+  'risk', 'master_btc', 'master_xau',
+];
 
 let pnlChart = null;
 let ws = null;
@@ -267,22 +281,25 @@ function renderAgentCard(name, data) {
     </div>`;
 }
 
-// ---------- Master Signal ----------
-function renderMaster(decision) {
-  const el = document.getElementById('master-signal');
-  const scoreEl = document.getElementById('master-score');
-  const reasonEl = document.getElementById('master-reasoning');
+// ---------- Master Signals ----------
+function renderMasterDecision(signalId, scoreId, reasonId, decision) {
   if (!decision) return;
-
   const score = decision.total_score ?? 0;
-  el.textContent = decision.signal || '—';
-  el.className = 'master-signal ' + (
-    decision.signal === 'LONG' ? 'positive' :
-    decision.signal === 'SHORT' ? 'negative' : 'neutral'
-  );
-  scoreEl.textContent = (score >= 0 ? '+' : '') + score.toFixed(2);
-  scoreEl.className = score > 0 ? 'positive' : score < 0 ? 'negative' : 'neutral';
-  reasonEl.textContent = decision.reasoning || '—';
+  const el = document.getElementById(signalId);
+  const scoreEl = document.getElementById(scoreId);
+  const reasonEl = document.getElementById(reasonId);
+  if (el) {
+    el.textContent = decision.signal || '—';
+    el.className = 'master-signal ' + (
+      decision.signal === 'LONG' ? 'positive' :
+      decision.signal === 'SHORT' ? 'negative' : 'neutral'
+    );
+  }
+  if (scoreEl) {
+    scoreEl.textContent = (score >= 0 ? '+' : '') + score.toFixed(2);
+    scoreEl.className = score > 0 ? 'positive' : score < 0 ? 'negative' : 'neutral';
+  }
+  if (reasonEl) reasonEl.textContent = decision.reasoning || '—';
 }
 
 // ---------- Balance ----------
@@ -383,8 +400,9 @@ function render(state) {
   const grid = document.getElementById('agents-grid');
   grid.innerHTML = AGENT_ORDER.map(name => renderAgentCard(name, state.agents?.[name])).join('');
 
-  // Master
-  renderMaster(state.master_decision);
+  // Dual Master
+  renderMasterDecision('master-btc-signal', 'master-btc-score', 'master-btc-reasoning', state.master_btc_decision);
+  renderMasterDecision('master-xau-signal', 'master-xau-score', 'master-xau-reasoning', state.master_xau_decision);
 
   // Balance
   renderBalance(state.balance, state.today_pnl || 0);

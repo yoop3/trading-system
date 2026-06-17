@@ -1,5 +1,5 @@
 """
-sentiment_agent.py — วิเคราะห์ market sentiment จาก Fear & Greed, Funding Rate, Open Interest
+sentiment_agent.py — วิเคราะห์ market sentiment จาก BTC Fear & Greed, BTC Funding Rate, BTC Open Interest
 อัปเดตทุก 15 นาที | rule-based | contrarian approach สำหรับ F&G
 """
 
@@ -13,14 +13,15 @@ from agents.base_agent import BaseAgent, AgentSignal
 class SentimentAgent(BaseAgent):
     """
     วิเคราะห์ sentiment ด้วย 3 แหล่งข้อมูล:
-    1. Fear & Greed Index (alternative.me) — contrarian
-    2. Funding Rate จาก Binance — longs/shorts pressure
-    3. Open Interest — trend confirmation
+    1. Fear & Greed Index (alternative.me) — contrarian (BTC-heavy index)
+    2. BTC Funding Rate จาก Binance — longs/shorts pressure
+    3. BTC Open Interest — trend confirmation
     """
+
+    BTC_SYMBOL = "BTC/USDT:USDT"
 
     def __init__(self, data_fetcher, db):
         super().__init__("sentiment", data_fetcher, db)
-        # เก็บ OI รอบก่อนเพื่อเปรียบเทียบ trend
         self._prev_open_interest: float = 0.0
 
     async def _get_fear_greed(self) -> int:
@@ -44,11 +45,11 @@ class SentimentAgent(BaseAgent):
         next_action = ""
 
         try:
-            # ดึงข้อมูลพร้อมกัน
+            # ดึง BTC data พร้อมกัน — F&G index เป็น BTC-heavy อยู่แล้ว
             fg_index = await self._get_fear_greed()
-            funding_rate = await self.data_fetcher.get_funding_rate()
-            open_interest = await self.data_fetcher.get_open_interest()
-            price = await self.data_fetcher.get_current_price()
+            funding_rate = await self.data_fetcher.get_funding_rate(symbol=self.BTC_SYMBOL)
+            open_interest = await self.data_fetcher.get_open_interest(symbol=self.BTC_SYMBOL)
+            price = await self.data_fetcher.get_current_price(symbol=self.BTC_SYMBOL)
 
             # Rule 1 — Fear & Greed Index (contrarian)
             if fg_index <= 25:
