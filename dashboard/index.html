@@ -444,17 +444,17 @@ function renderPaperPositions(positions) {
         <th>#</th><th>Asset</th><th>Side</th><th>Entry</th><th>Current</th><th>Size</th><th>Unrealized PnL</th><th>เปิดเมื่อ</th>
       </tr></thead>
       <tbody>${positions.map(p => {
-        const upnl = p.unrealized_pnl ?? 0;
-        const pnlClass = upnl > 0 ? 'positive' : upnl < 0 ? 'negative' : '';
+        const upnl = p.unrealized_pnl;
+        const pnlClass = upnl == null ? '' : upnl > 0 ? 'positive' : upnl < 0 ? 'negative' : '';
         const sideClass = p.side === 'LONG' ? 'badge-long' : 'badge-short';
         return `<tr>
           <td>${p.trade_id}</td>
           <td>${assetLabel(p.asset)}</td>
           <td><span class="badge ${sideClass}">${p.side}</span></td>
           <td>${fmt(p.entry_price)}</td>
-          <td>${fmt(p.current_price)}</td>
+          <td>${p.current_price != null ? fmt(p.current_price) : '—'}</td>
           <td>${p.size}</td>
-          <td class="${pnlClass}" style="font-weight:600">${upnl >= 0 ? '+' : ''}${fmt(upnl)} USDT</td>
+          <td class="${pnlClass}" style="font-weight:600">${p.unrealized_pnl != null ? (upnl >= 0 ? '+' : '') + fmt(upnl) + ' USDT' : '—'}</td>
           <td>${bkkTime(p.timestamp)}</td>
         </tr>`;
       }).join('')}</tbody>

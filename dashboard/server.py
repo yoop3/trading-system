@@ -193,36 +193,37 @@ class DashboardServer:
                 if latest_decision and not self._state["master_decision"]:
                     self._state["master_decision"] = latest_decision
 
-                # คำนวณ unrealized PnL ของ open paper positions
-                if self._data_fetcher:
-                    open_trades = await self._db.get_open_trades()
-                    paper_positions = []
-                    for t in open_trades:
+                # แสดง open paper positions — พยายามดึงราคาปัจจุบัน ถ้าไม่ได้แสดง None
+                open_trades = await self._db.get_open_trades()
+                paper_positions = []
+                for t in open_trades:
+                    asset = t.get("asset") or os.getenv("TRADING_SYMBOL", "ETH/USDT:USDT")
+                    entry = float(t.get("entry_price", 0) or 0)
+                    size  = float(t.get("size", 0) or 0)
+                    side  = t.get("side", "LONG")
+                    if not entry or not size:
+                        continue
+                    current_price = None
+                    unrealized = None
+                    if self._data_fetcher:
                         try:
-                            asset = t.get("asset") or os.getenv("TRADING_SYMBOL", "ETH/USDT:USDT")
                             current_price = await self._data_fetcher.get_current_price(asset)
-                            entry = float(t.get("entry_price", 0) or 0)
-                            size  = float(t.get("size", 0) or 0)
-                            side  = t.get("side", "LONG")
-                            if not entry or not size:
-                                continue
                             gross = (current_price - entry) * size if side == "LONG" else (entry - current_price) * size
-                            # ค่าธรรมเนียมฝั่งปิด (ฝั่งเปิดถูกหักไปแล้วตอน open_long/open_short)
                             fee = (entry + current_price) * size * self._TAKER_FEE_PCT
                             unrealized = round(gross - fee, 4)
-                            paper_positions.append({
-                                "trade_id": t["id"],
-                                "asset": asset,
-                                "side": side,
-                                "entry_price": entry,
-                                "current_price": current_price,
-                                "size": size,
-                                "unrealized_pnl": unrealized,
-                                "timestamp": t.get("timestamp", ""),
-                            })
                         except Exception as e:
-                            logger.warning(f"Dashboard: unrealized PnL error trade#{t.get('id')}: {e}")
-                    self._state["paper_positions"] = paper_positions
+                            logger.warning(f"Dashboard: price fetch error trade#{t.get('id')} {asset}: {e}")
+                    paper_positions.append({
+                        "trade_id": t["id"],
+                        "asset": asset,
+                        "side": side,
+                        "entry_price": entry,
+                        "current_price": current_price,
+                        "size": size,
+                        "unrealized_pnl": unrealized,
+                        "timestamp": t.get("timestamp", ""),
+                    })
+                self._state["paper_positions"] = paper_positions
 
             if self._data_fetcher:
                 try:
