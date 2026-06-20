@@ -284,6 +284,49 @@ class TradingSystem:
     # XAU pipeline
     # ──────────────────────────────────────────────
 
+    def _shadow_smc_wyckoff_gate(self, xau_decision, smc_out: dict | None) -> None:
+        """
+        Shadow log: จำลองว่าถ้า SMC+Wyckoff เป็น primary gate จะ ALLOW หรือ BLOCK trade นี้
+        ไม่แตะ logic จริงใดๆ — log อย่างเดียวเพื่อเก็บข้อมูลเปรียบเทียบ
+        """
+        signal = xau_decision.signal
+        score  = xau_decision.total_score
+
+        # --- SMC criteria ---
+        if smc_out and smc_out.get("criteria"):
+            criteria = smc_out["criteria"]
+            smc_count = sum(1 for v in criteria.values() if v)
+            smc_detail = " | ".join(f"{k}={'Y' if v else 'N'}" for k, v in criteria.items())
+            smc_signal = smc_out.get("signal", "NO_SETUP")
+        else:
+            smc_count, smc_detail, smc_signal = 0, "no_smc_output", "NO_SETUP"
+
+        # --- Wyckoff phase ---
+        wyckoff_sig = self._xau_signals.get("wyckoff_xau")
+        wyckoff_signal = wyckoff_sig.signal if wyckoff_sig else "UNKNOWN"
+        wyckoff_score  = wyckoff_sig.score  if wyckoff_sig else 0
+
+        # --- Shadow gate logic (SMC ≥ 4/6 AND Wyckoff agrees) ---
+        smc_ok      = smc_count >= 4 and smc_signal == signal
+        wyckoff_ok  = wyckoff_signal == signal or wyckoff_signal == "HOLD"
+        shadow_allow = smc_ok and wyckoff_ok and signal != "HOLD"
+
+        verdict = "ALLOW" if shadow_allow else "BLOCK"
+        block_reason = []
+        if not smc_ok:
+            block_reason.append(f"SMC {smc_count}/6 (need ≥4, signal={smc_signal})")
+        if not wyckoff_ok:
+            block_reason.append(f"Wyckoff={wyckoff_signal} ไม่ตรงกับ {signal}")
+        if signal == "HOLD":
+            block_reason.append("master=HOLD")
+
+        logger.info(
+            f"[shadow] XAU {signal} score={score:+.1f} | "
+            f"SMC={smc_count}/6 [{smc_signal}] | Wyckoff={wyckoff_signal}({wyckoff_score:+.1f}) | "
+            f"→ {verdict}" + (f" ({', '.join(block_reason)})" if block_reason else "")
+        )
+        logger.debug(f"[shadow] SMC criteria: {smc_detail}")
+
     async def _run_xau_master(self):
         """Master XAU decision → Reversal check → Risk (เสมอ) → Execute"""
         if not self._xau_signals:
@@ -295,6 +338,9 @@ class TradingSystem:
         current_positions = await self.db.get_open_trades(asset=self.XAU_SYMBOL)
         # confidence จาก weighted score — XAU threshold ±5 → score=10 คือ 100%
         master_conf = min(abs(xau_decision.total_score) / 10.0, 1.0)
+
+        # Shadow: จำลอง SMC+Wyckoff gating โดยไม่แตะ logic จริง
+        self._shadow_smc_wyckoff_gate(xau_decision, self.smc_xau.last_smc_output)
 
         # Reversal check: XAU reversal_score_min = 7 (threshold 5 + 2)
         closed_by_reversal = await self._check_reversal_and_close(
